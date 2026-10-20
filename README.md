@@ -1,11 +1,14 @@
-# VERA — Assistente pessoal para Windows
+# VERA
 
-Protótipo **v0.1.0**: painel web local e serviço Python para Windows 11. Projeto em desenvolvimento, mantido privado nesta fase.
+Estou criando a VERA para facilitar algumas tarefas no meu computador. Quero conseguir acompanhar o uso do PC e controlar algumas coisas pelo navegador. Mais pra frente, a ideia é usar comandos de voz e IA para pedir ações sem precisar fazer tudo manualmente.
 
-## Como executar no VS Code (PowerShell)
+Ainda estou no começo do projeto. Por enquanto, já dá para ver o uso de CPU e memória, consultar os processos abertos e testar os controles de encerramento de processos e desligamento agendado.
 
-1. Instale Python 3.11+ e abra a pasta do projeto no VS Code.
-2. Execute:
+**Os comandos que podem fechar programas ou desligar o computador estão em modo de simulação.** Eles ainda não fazem essas ações de verdade.
+
+## Como testar
+
+Estou usando Python e VS Code no Windows 11. Com o Python 3.11 ou mais recente instalado, abra a pasta no VS Code e execute no PowerShell:
 
 ```powershell
 py -m venv .venv
@@ -14,34 +17,20 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-3. No arquivo `.env`, troque `ASSISTANT_TOKEN` por um token aleatório longo. **Mantenha `DRY_RUN=true`**.
-4. Inicie o servidor:
+Abra o arquivo `.env` e troque o valor de `ASSISTANT_TOKEN` por uma senha longa. Deixe `DRY_RUN=true` para manter a simulação ativada.
+
+Depois execute:
 
 ```powershell
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-5. Abra http://127.0.0.1:8000, informe o token e conecte.
+O painel abre em http://127.0.0.1:8000. É só informar o token configurado.
 
-## Segurança
+## O que ainda falta
 
-O protótipo inicia acessível apenas no próprio computador. **Não exponha o servidor à internet e não abra portas no roteador.** Para testar em celular na mesma rede doméstica confiável, use `--host 0.0.0.0` e configure o Firewall apenas para redes privadas. O HTTP local não cifra o token; uso remoto exigirá VPN privada ou HTTPS.
+Ainda quero adicionar a abertura de programas, comandos de voz, automações e acesso seguro pelo celular. Também preciso testar melhor os controles antes de permitir que façam alterações reais no Windows.
 
-## Funcionalidades da versão inicial
+Por enquanto, o painel deve ser usado localmente. Não abra acesso a ele pela internet. Os desligamentos agendados também são perdidos quando o servidor é fechado.
 
-- Indicadores de CPU e RAM.
-- Lista de processos e solicitação de encerramento por PID/nome, com bloqueio básico de processos críticos.
-- Agendamento e cancelamento de desligamento.
-- Autenticação por token e modo de simulação por padrão.
-
-## Limitações conhecidas
-
-- `DRY_RUN=true` simula ações destrutivas; não encerra processos nem desliga o computador.
-- Agendamentos ficam apenas em memória e são perdidos quando o servidor é fechado.
-- Wake-on-LAN, abertura de aplicativos, histórico persistente e comandos por voz ainda não estão implementados.
-- Desligamento real não foi validado em Windows; não habilite durante trabalho importante.
-- Este projeto não é um produto pronto para uso em produção.
-
-## Próximas etapas
-
-Testar o painel no Windows 11, validar operações de leitura, corrigir problemas identificados e implementar gradualmente os módulos de controle e automação.
+Vou melhorando o projeto aos poucos e registrando as mudanças aqui.
