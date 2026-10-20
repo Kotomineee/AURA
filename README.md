@@ -1,12 +1,12 @@
-# VERA
+# AURA
 
-VERA é um aplicativo de assistência pessoal desenvolvido para facilitar tarefas no computador por meio de uma interface web. A proposta é reunir funções de monitoramento, controle do sistema e automação em um só lugar, com a possibilidade de utilizar inteligência artificial e comandos de voz para executar ações de forma mais prática.
+AURA é um aplicativo de assistência pessoal desenvolvido para facilitar tarefas no computador por meio de uma interface web. A proposta é reunir funções de monitoramento, controle do sistema e automação em um só lugar, com a possibilidade de utilizar inteligência artificial e comandos de voz para executar ações de forma mais prática.
 
 O projeto está em desenvolvimento. Nesta primeira versão, o foco é testar a comunicação entre a interface e o programa em Python que roda no Windows.
 
 ## Funcionalidades
 
-Atualmente, a VERA permite:
+Atualmente, a AURA permite:
 
 - Consultar o uso de CPU e memória RAM.
 - Visualizar os processos em execução.
@@ -44,6 +44,6 @@ A integração com IA também faz parte do planejamento, mas ainda não está di
 
 ## Observações
 
-A VERA ainda está em fase de testes e deve ser executada localmente. Não é recomendado disponibilizar o painel diretamente na internet.
+A AURA ainda está em fase de testes e deve ser executada localmente. Não é recomendado disponibilizar o painel diretamente na internet.
 
 Os agendamentos de desligamento ainda não são salvos: se o programa for fechado, eles serão perdidos. As funções que alteram o estado do Windows também precisam ser validadas antes de sair do modo de simulação.
