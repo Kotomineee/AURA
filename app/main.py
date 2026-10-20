@@ -1,4 +1,5 @@
 import os
+import getpass
 import threading
 import time
 from pathlib import Path
@@ -30,6 +31,7 @@ def authorize(authorization: str | None):
 class ProcessRequest(BaseModel):
     pid: int = Field(gt=0)
     name: str = Field(min_length=1)
+    created_at: float | None = None
 
 
 class ShutdownRequest(BaseModel):
@@ -57,20 +59,73 @@ def status(authorization: str | None = Header(default=None)):
     }
 
 
+# Política conservadora: só permitir aplicativos do usuário fora da pasta Windows.
+# A lista de nomes é uma camada extra, não a única verificação.
+PROTECTED_NAMES = {
+    "system", "system idle process", "registry", "secure system", "memory compression",
+    "smss.exe", "csrss.exe", "wininit.exe", "services.exe", "lsass.exe",
+    "lsaiso.exe", "winlogon.exe", "svchost.exe", "explorer.exe", "dwm.exe",
+    "fontdrvhost.exe", "sihost.exe", "taskhostw.exe", "spoolsv.exe",
+    "audiodg.exe", "searchindexer.exe", "searchhost.exe", "startmenuexperiencehost.exe",
+    "runtimebroker.exe", "shellexperiencehost.exe", "ctfmon.exe", "conhost.exe",
+    "dllhost.exe", "wudfhost.exe", "wmiprvse.exe", "securityhealthservice.exe",
+    "msmpeng.exe", "msmpsvc.exe", "trustedinstaller.exe", "tiworker.exe",
+    "python.exe", "pythonw.exe", "powershell.exe", "pwsh.exe", "cmd.exe",
+}
+
+
+def protected_process(p: psutil.Process) -> bool:
+    # Se a identidade não puder ser confirmada, não permitir encerrar.
+    try:
+        if p.pid <= 4 or p.pid == os.getpid():
+            return True
+        name = p.name().casefold()
+        if name in PROTECTED_NAMES:
+            return True
+        # Preserva a árvore de processos que iniciou a AURA.
+        parent = psutil.Process(os.getpid())
+        while parent is not None:
+            if p.pid == parent.pid:
+                return True
+            parent = parent.parent()
+        if os.name != "nt":
+            return True  # O gerenciamento de processos deste protótipo é para Windows.
+        exe = p.exe()
+        owner = p.username()
+        if not exe or not owner:
+            return True
+        windows_dir = Path(os.environ.get("WINDIR", r"C:\Windows"))
+        try:
+            if Path(exe).resolve().is_relative_to(windows_dir.resolve()):
+                return True
+        except (OSError, ValueError):
+            return True
+        current_user = getpass.getuser().casefold()
+        process_user = owner.rsplit("\\", 1)[-1].casefold()
+        if process_user != current_user:
+            return True
+        return False
+    except (psutil.Error, OSError, ValueError):
+        return True
+
+
 @app.get("/api/processes")
 def processes(authorization: str | None = Header(default=None)):
     authorize(authorization)
     result = []
     for p in psutil.process_iter(["pid", "name", "memory_info"]):
         try:
+            if protected_process(p):
+                continue
             d = p.info
             result.append({
                 "pid": d["pid"],
                 "name": d["name"],
                 "ram_mb": round(d["memory_info"].rss / 1024**2, 1)
                 if d["memory_info"] else 0,
+                "created_at": p.create_time(),
             })
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
     return sorted(result, key=lambda x: x["ram_mb"], reverse=True)[:150]
 
@@ -87,13 +142,10 @@ def terminate(req: ProcessRequest, authorization: str | None = Header(default=No
         raise HTTPException(403, "Sem permissão para consultar processo")
     if name.lower() != req.name.lower():
         raise HTTPException(409, "O processo mudou; atualize a lista")
-    protected = {
-        "system", "registry", "smss.exe", "csrss.exe", "wininit.exe",
-        "services.exe", "lsass.exe", "winlogon.exe", "svchost.exe",
-        "explorer.exe", "dwm.exe", "python.exe", "pythonw.exe",
-    }
-    if name.lower() in protected or p.pid == os.getpid():
-        raise HTTPException(403, "Processo protegido")
+    if protected_process(p):
+        raise HTTPException(403, "Processo protegido ou identidade não verificável")
+    if req.created_at is None or abs(p.create_time() - req.created_at) > 0.01:
+        raise HTTPException(409, "O PID foi reutilizado ou a lista está desatualizada")
     if DRY_RUN:
         return {"message": f"SIMULAÇÃO: encerraria {name} (PID {p.pid})"}
     try:
