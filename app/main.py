@@ -1,4 +1,6 @@
 import os
+import subprocess
+from typing import Literal
 import getpass
 import threading
 import time
@@ -196,3 +198,27 @@ def cancel_shutdown(authorization: str | None = Header(default=None)):
         shutdown_timer = None
         shutdown_at = None
     return {"message": "Agendamento cancelado"}
+
+
+class PowerRequest(BaseModel):
+    action: Literal["shutdown", "restart"]
+    confirm: bool
+
+
+@app.post("/api/power")
+def power_action(req: PowerRequest, authorization: str | None = Header(default=None)):
+    authorize(authorization)
+    if not req.confirm:
+        raise HTTPException(400, "Confirmação obrigatória")
+    if DRY_RUN:
+        verb = "desligaria" if req.action == "shutdown" else "reiniciaria"
+        return {"message": f"SIMULAÇÃO: {verb} o computador"}
+    if os.name != "nt":
+        raise HTTPException(400, "Controle de energia real requer Windows")
+    # /t 15 oferece uma janela para cancelar com shutdown /a.
+    args = ["shutdown", "/s" if req.action == "shutdown" else "/r", "/t", "15"]
+    try:
+        subprocess.run(args, check=True, capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        raise HTTPException(500, "O Windows não aceitou o comando de energia")
+    return {"message": "Comando enviado ao Windows. Ação em 15 segundos."}
