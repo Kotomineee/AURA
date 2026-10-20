@@ -13,7 +13,7 @@ load_dotenv()
 ROOT = Path(__file__).resolve().parent
 TOKEN = os.getenv("ASSISTANT_TOKEN", "")
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
-app = FastAPI(title="VERA", docs_url=None, redoc_url=None)
+app = FastAPI(title="AURA", docs_url=None, redoc_url=None)
 shutdown_timer = None
 shutdown_at = None
 lock = threading.Lock()
