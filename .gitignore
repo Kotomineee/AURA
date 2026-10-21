@@ -3,3 +3,14 @@ __pycache__/
 *.pyc
 .env
 *.log
+*.key
+identity.json
+*.sqlite
+build/
+dist/
+*.spec
+.gradle/
+.idea/
+local.properties
+*.jks
+*.keystore
