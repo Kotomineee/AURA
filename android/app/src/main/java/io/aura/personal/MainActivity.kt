@@ -170,14 +170,14 @@ class MainActivity : Activity() {
 
     private fun ipv4(value: String): InetAddress {
         val parts = value.split('.')
-        require(parts.size==4 && parts.all { it.toIntOrNull() in 0..255 }) { "IPv4 inválido" }
+        require(parts.size==4 && parts.all { part -> part.toIntOrNull()?.let { it in 0..255 } == true }) { "IPv4 inválido" }
         return InetAddress.getByAddress(parts.map { it.toInt().toByte() }.toByteArray())
     }
     private fun macBytes(value: String): ByteArray {
         val normalized = value.replace(":", "").replace("-", "")
         require(normalized.matches(Regex("[0-9a-fA-F]{12}"))) { "MAC inválido" }
         val bytes = ByteArray(6) { normalized.substring(it*2,it*2+2).toInt(16).toByte() }
-        require(bytes.any { it.toInt()!=0 } && bytes[0].toInt() and 1 == 0) { "MAC inválido" }
+        require(bytes.any { it.toInt()!=0 } && (bytes[0].toInt() and 1) == 0) { "MAC inválido" }
         return bytes
     }
     private fun wake() { work {
