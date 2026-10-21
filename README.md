@@ -8,8 +8,8 @@ A ideia é criar um assistente que consiga interpretar comandos e interagir com 
 
 O principal objetivo é desenvolver uma aplicação funcional que permita controlar diferentes recursos do PC, como:
 
-- Desligar, reiniciar e agendar o desligamento do computador.
-- Controlar aplicativos, como o Discord.
+- Controle Total do Computador
+- Controlar aplicações e automação do PC.
 - Executar ações no sistema por comandos de voz.
 - Permitir o controle remoto de determinadas funções pelo celular.
 - Expandir gradualmente as funcionalidades conforme o desenvolvimento.
