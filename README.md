@@ -1,4 +1,4 @@
-# AURA 0.4.0-dev — Aplicativos Windows e Android
+# AURA 0.1.0-dev — Aplicativos Windows e Android
 
 Primeiro incremento nativo, baseado na Especificação do Assistente Pessoal v1
 e na orientação de 20/10/2026: as interfaces principais são aplicativos Windows
