@@ -25,6 +25,8 @@ def main():
     import ipaddress
 
     root = tk.Tk()
+    if '--check-ui' in sys.argv:
+        root.withdraw()
     root.title('AURA • Windows • 0.4.0-dev')
     root.geometry('850x680')
     root.minsize(700, 560)
@@ -192,6 +194,10 @@ def main():
         logtext.insert('1.0','\n'.join(data['lines']))
         banner.set('Últimos eventos do agente.')
     ttk.Button(history, text='Atualizar histórico', command=lambda: task(lambda: api('logs'), display_logs)).pack(fill='x')
+    if '--check-ui' in sys.argv:
+        from .native_runtime import DATA
+        root.after(100, root.destroy)
+        (DATA / 'ui-check.txt').write_text('OK', encoding='utf-8')
     root.mainloop()
 
 

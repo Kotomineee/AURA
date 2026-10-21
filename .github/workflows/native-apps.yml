@@ -41,6 +41,7 @@ jobs:
       - run: python -m pip install -r requirements.txt pyinstaller httpx
       - run: python tools/check_native.py
       - run: python -m PyInstaller --noconfirm --windowed --onedir --name AURA --collect-all uvicorn --collect-all fastapi --collect-all cryptography --hidden-import app.native_agent launch_windows.py
+      - run: python tools/check_windows_binary.py
       - uses: actions/upload-artifact@v4
         with:
           name: AURA-Windows-0.4.0-dev

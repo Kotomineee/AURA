@@ -221,7 +221,7 @@ def logs():
 def run():
     import uvicorn
     uvicorn.run(app, host='0.0.0.0', port=PORT, ssl_certfile=settings['cert'],
-                ssl_keyfile=settings['key'], access_log=False)
+                ssl_keyfile=settings['key'], access_log=False, log_config=None)
 
 
 if __name__ == '__main__':
