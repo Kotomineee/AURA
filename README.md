@@ -1,9 +1,5 @@
 # AURA 0.1.0-dev — Aplicativos Windows e Android
 
-Primeiro incremento nativo, baseado na Especificação do Assistente Pessoal v1
-e na orientação de 20/10/2026: as interfaces principais são aplicativos Windows
-e Android. O painel web da 0.3.1 é somente o protótipo anterior.
-
 ## O que está implementado neste incremento
 
 - Janela nativa no Windows, com controles locais, processos e conexão do Android.
