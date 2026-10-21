@@ -1,0 +1,13 @@
+<resources>
+    <style name="AuraTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#31D0C3</item>
+        <item name="android:windowBackground">#0C1219</item>
+        <item name="android:colorBackground">#0C1219</item>
+        <item name="android:colorControlNormal">#A9BACB</item>
+        <item name="android:textColorPrimary">#F0F4FA</item>
+        <item name="android:textColorSecondary">#A9BACB</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

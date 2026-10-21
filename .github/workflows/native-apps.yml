@@ -1,8 +1,5 @@
 name: Aplicativos AURA
 on:
-  push:
-    branches: [main]
-    paths: ['app/**', 'android/**', 'tools/**', 'launch_windows.py', 'requirements.txt', '.github/workflows/native-apps.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,11 +20,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - run: gradle --no-daemon :app:assembleDebug :app:lintDebug
+      - run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
         working-directory: android
       - uses: actions/upload-artifact@v4
         with:
-          name: AURA-Android-0.4.0-dev
+          name: AURA-Android-0.1.2
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   windows:
@@ -40,10 +37,34 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt pyinstaller httpx
       - run: python tools/check_native.py
-      - run: python -m PyInstaller --noconfirm --windowed --onedir --name AURA --collect-all uvicorn --collect-all fastapi --collect-all cryptography --hidden-import app.native_agent launch_windows.py
-      - run: python tools/check_windows_binary.py
+      - run: python tools/check_icons.py
+      - run: python tools/check_012.py
+      - run: python tools/check_update_installer.py
+      - run: python tools/build_windows.py
+      - run: python tools/check_packaged_runtime.py dist/AURA-Windows-0.1.2.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: AURA-Windows-0.4.0-dev
-          path: dist/AURA/
+          name: AURA-Windows-0.1.2
+          path: dist/AURA-Windows-0.1.2.exe
+          if-no-files-found: error
+  release_files:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - run: |
+          mkdir -p release
+          cp artifacts/AURA-Windows-0.1.2/AURA-Windows-0.1.2.exe release/
+          cp artifacts/AURA-Android-0.1.2/app-debug.apk release/AURA-Android-0.1.2.apk
+          python tools/make_update_manifest.py --windows release/AURA-Windows-0.1.2.exe --android release/AURA-Android-0.1.2.apk --output release/aura-update.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AURA-Release-0.1.2
+          path: release/
           if-no-files-found: error

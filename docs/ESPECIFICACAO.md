@@ -14,15 +14,15 @@ interface web serve apenas como protótipo visual anterior.
 - Identidade do PC transferida por código privado; credencial e certificado por instalação.
 - Sem nuvem obrigatória para LAN. Acesso externo via VPN fica para validação posterior.
 
-## Requisitos e estado no incremento 0.4.0-dev
+## Requisitos e estado no incremento 0.4.1
 
 | ID | Requisito | Estado |
 |---|---|---|
-| RF-01 | Interface PC e celular | Implementadas interfaces nativas iniciais; validação visual e em aparelhos pendente |
+| RF-01 | Interface PC e celular | Reformulação nativa conforme tema aprovado; ver VERSAO-0.4.1.md para validação |
 | RF-02 | Descobrir e abrir programas | Pendente; não executar comandos arbitrários |
 | RF-03 | Encerrar alvo explícito | Reutiliza proteção da 0.3.1, nome, PID e horário de criação |
 | RF-04 | Sites e atalhos, incluindo Gupy | Pendente |
-| RF-05 | Energia e Wake-on-LAN | Implementados comandos; despertar físico ainda não validado |
+| RF-05 | Energia e Wake-on-LAN | Implementados; testes físicos anteriores confirmados pelo usuário |
 | RF-06 | Agendamento persistente e cancelável | SQLite; prazos vencidos ao iniciar são cancelados e registrados |
 | RF-07 | Logs com origem, horário e resultado | Log rotativo sem tokens; histórico nas interfaces |
 | RF-08 | Palavra-chave GPT e voz offline | Pendente; microfone em segundo plano no Android é experimental |
@@ -66,3 +66,9 @@ automaticamente. O firmware e o hardware precisam ser testados.
 Streaming estilo AnyDesk, atualização automática de programas, instalação sem
 autorização, comercialização e assistente conversacional genérico permanecem fora
 do escopo definido no documento.
+
+## Incremento visual 0.4.1
+
+A referência visual aprovada, escopo, transporte/cache de ícones e validações
+estão em VERSAO-0.4.1.md. Os critérios físicos acima são históricos; não foram
+repetidos nesta entrega, conforme orientação do usuário.

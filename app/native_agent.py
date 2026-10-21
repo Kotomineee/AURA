@@ -16,6 +16,8 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from .native_runtime import DATA, PORT, identity
+from . import process_icons
+from .version import VERSION, BUILD
 
 settings = identity()
 from dotenv import load_dotenv
@@ -89,7 +91,7 @@ async def lifespan(app):
     thread.join(timeout=12)
 
 
-app = FastAPI(title='AURA Native', version='0.4.0-dev', docs_url=None,
+app = FastAPI(title='AURA Native', version=VERSION, docs_url=None,
               redoc_url=None, openapi_url=None, lifespan=lifespan)
 attempts = defaultdict(deque)
 
@@ -120,7 +122,7 @@ def status():
     result = legacy.status('Bearer ' + settings['token'])
     with db() as conn:
         row = conn.execute('SELECT at FROM schedule WHERE id=1').fetchone()
-    result.update(shutdown_at=row[0] if row else None, version='0.4.0-dev')
+    result.update(shutdown_at=row[0] if row else None, version=VERSION, build=BUILD)
     return result
 
 
@@ -147,7 +149,30 @@ def mode(req: Mode, request: Request):
 
 @app.get('/api/processes')
 def processes():
-    return legacy.processes('Bearer ' + settings['token'])
+    rows = legacy.processes('Bearer ' + settings['token'])
+    for row in rows:
+        row['icon_id'] = process_icons.register(row)
+    return rows
+
+
+@app.get('/api/process-icons/{icon_id}')
+def process_icon(icon_id: str):
+    # Only opaque IDs already registered by process enumeration are accepted.
+    if len(icon_id) != 64 or any(c not in '0123456789abcdef' for c in icon_id):
+        raise HTTPException(404, 'Ícone indisponível')
+    return JSONResponse(process_icons.lookup(icon_id), headers={'Cache-Control': 'no-store'})
+
+
+class IconBatch(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=16)
+
+
+@app.post('/api/process-icons')
+def process_icon_batch(req: IconBatch):
+    if any(len(key) != 64 or any(c not in '0123456789abcdef' for c in key) for key in req.ids):
+        raise HTTPException(400, 'Identificador de ícone inválido')
+    return JSONResponse({'icons': {key: process_icons.lookup(key) for key in dict.fromkeys(req.ids)}},
+                        headers={'Cache-Control': 'no-store'})
 
 
 class Action(BaseModel):
@@ -218,10 +243,34 @@ def logs():
     return {'lines': lines[-100:]}
 
 
+server = None
+
+
+class UpdatePreparation(BaseModel):
+    confirm: bool
+
+
+@app.post('/api/update/prepare')
+def prepare_update(request: Request, action: UpdatePreparation):
+    if not action.confirm or not request.client or request.client.host not in ('127.0.0.1', '::1'):
+        raise HTTPException(403, 'A atualização deve ser iniciada pela AURA neste PC.')
+    if server is None:
+        raise HTTPException(503, 'Agente indisponível para atualização.')
+    import psutil
+    current = server
+    def stop_for_update():
+        current.should_exit = True
+    threading.Timer(.5, stop_for_update).start()
+    return {'pid':os.getpid(), 'created_at':psutil.Process().create_time()}
+
+
 def run():
+    global server
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=PORT, ssl_certfile=settings['cert'],
-                ssl_keyfile=settings['key'], access_log=False, log_config=None)
+    config = uvicorn.Config(app, host='0.0.0.0', port=PORT, ssl_certfile=settings['cert'],
+                           ssl_keyfile=settings['key'], access_log=False, log_config=None)
+    server = uvicorn.Server(config)
+    server.run()
 
 
 if __name__ == '__main__':
