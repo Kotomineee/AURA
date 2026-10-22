@@ -1,15 +1,31 @@
 """AURA's charcoal/teal design primitives, drawn locally without font icons."""
 import tkinter as tk
 
-BG = '#0C1219'
-PANEL = '#141D27'
-SIDEBAR = '#111B25'
-LINE = '#2C3B49'
-TEXT = '#F0F4FA'
-MUTED = '#A9BACB'
-TEAL = '#31D0C3'
-SELECT = '#16363E'
-RED = '#F17A85'
+BG = '#0E1021'
+PANEL = '#191D35'
+SIDEBAR = '#12152B'
+LINE = '#333A5A'
+TEXT = '#F3F2FF'
+MUTED = '#B1B8D2'
+TEAL = '#A69BFF'
+SELECT = '#303154'
+RED = '#FF8FA8'
+
+
+class VoiceMeter(tk.Canvas):
+    """Wave history from actual PCM amplitude; silence stays flat."""
+    def __init__(self,parent):
+        super().__init__(parent,height=64,bg=BG,highlightthickness=0)
+        self.samples=[0.]*48
+        self.bind('<Configure>',lambda _:self.draw())
+    def set_level(self,value):
+        self.samples=(self.samples+[max(0.,min(1.,value))])[-48:];self.draw()
+    def draw(self):
+        self.delete('all');w=max(48,self.winfo_width());h=64
+        self.create_line(8,h/2,w-8,h/2,fill=LINE)
+        for i,level in enumerate(self.samples):
+            x=10+i*(w-20)/48;half=max(1,level*26)
+            self.create_line(x,h/2-half,x,h/2+half,fill=TEAL if i<36 else '#68DFC8',width=max(2,(w-20)/72),capstyle='round')
 
 
 def rounded(canvas, x1, y1, x2, y2, radius=10, **kwargs):

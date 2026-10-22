@@ -7,44 +7,9 @@ import sys
 import threading
 import time
 import unicodedata
-
-
-def normalize(value):
-    return re.sub(r'[^a-z0-9 ]', '', ''.join(c for c in unicodedata.normalize('NFD', value.lower()) if unicodedata.category(c) != 'Mn')).strip()
-
-
-NUMBERS = {'um':1,'uma':1,'dois':2,'duas':2,'tres':3,'quatro':4,'cinco':5,'seis':6,'sete':7,'oito':8,'nove':9,'dez':10,'onze':11,'doze':12,'quinze':15,'vinte':20,'trinta':30,'quarenta':40,'cinquenta':50,'sessenta':60}
-
-
-def parse(text):
-    text = normalize(text)
-    if text in ('cancelar desligamento','cancele o desligamento','cancelar agendamento','cancele o agendamento'):
-        return ('cancel', None)
-    if text in ('estado','status','atualizar estado','qual o estado do pc','uso de memoria','uso da memoria','uso de cpu'):
-        return ('status', None)
-    if text in ('ligar pc','ligar o pc','ligue o computador','ligar computador'):
-        return ('wake', None)
-    match = re.fullmatch(r'(?:desligar|desligue|agendar desligamento)(?: o)?(?: pc| computador)? em (.+) (minuto|minutos|hora|horas)', text)
-    if match:
-        amount = match[1]
-        value = int(amount) if amount.isdigit() else sum(NUMBERS.get(w, 0) for w in amount.split() if w != 'e') if all(w in NUMBERS or w == 'e' for w in amount.split()) else 0
-        seconds = value * (3600 if match[2].startswith('hora') else 60)
-        if 60 <= seconds <= 604800:return ('schedule', seconds)
-        return None
-    if text in ('desligar pc','desligar o pc','desligue o computador','desligar computador'):
-        return ('shutdown', None)
-    if text in ('reiniciar pc','reiniciar o pc','reinicie o computador','reiniciar computador'):
-        return ('restart', None)
-    match = re.fullmatch(r'(?:fechar|feche|encerrar|encerre) (?:(?:o |a )?programa |o |a )?(.+)',text)
-    if match:return ('terminate',match[1])
-    return None
-
-
-def matches_process(row, argument):
-    pid=re.fullmatch(r'(?:processo|pid) (\d+)',argument)
-    if pid:return row['pid']==int(pid[1])
-    aliases={'discord':'discord','discordia':'discord','disco':'discord','cromo':'chrome','bloco de notas':'notepad','calculadora':'calculator'}
-    return normalize(row['name'].lower().removesuffix('.exe'))==aliases.get(argument,argument)
+import math
+import struct
+from .voice_commands import parse, matches_process, normalize
 
 
 class WakeGate:
@@ -82,19 +47,43 @@ class Listener:
             SetLogLevel(-1)
             base=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parents[1]))
             model=Model(str(base/'voice-model'))
+            english_model=Model(str(base/'voice-model-en'))
+            wake=KaldiRecognizer(model,16000,json.dumps(['ok aura','[unk]']))
             recognizer=KaldiRecognizer(model,16000)
+            english=KaldiRecognizer(english_model,16000)
             audio=queue.Queue(maxsize=32)
             def receive(data,frames,clock,status):
                 try:audio.put_nowait(bytes(data))
                 except queue.Full:pass
-            gate=WakeGate()
-            with sd.RawInputStream(samplerate=16000,blocksize=4000,dtype='int16',channels=1,callback=receive):
+            deadline=0
+            last_level=0
+            english_parts=[]
+            with sd.RawInputStream(samplerate=16000,blocksize=1280,dtype='int16',channels=1,callback=receive):
                 self.callback(('state','Diga “Ok Aura” e depois o comando.'))
                 while not self.stop.is_set():
                     try:data=audio.get(timeout=.2)
                     except queue.Empty:continue
+                    now=time.monotonic()
+                    if now-last_level>=.08:
+                        samples=struct.unpack('<'+'h'*(len(data)//2),data)
+                        level=min(1.,math.sqrt(sum(v*v for v in samples)/max(1,len(samples)))/6000)
+                        self.callback(('level',level));last_level=now
+                    if deadline and now>=deadline:
+                        deadline=0;wake.Reset();self.callback(('state','Diga “Ok Aura”.'))
+                    if not deadline:
+                        final=wake.AcceptWaveform(data)
+                        hypothesis=json.loads(wake.Result() if final else wake.PartialResult()).get('text' if final else 'partial','')
+                        if normalize(hypothesis)=='ok aura':
+                            deadline=now+10;recognizer.Reset();english.Reset();english_parts.clear();self.callback(('awake',None))
+                        continue
+                    if english.AcceptWaveform(data):english_parts.append(json.loads(english.Result()).get('text',''))
                     if recognizer.AcceptWaveform(data):
-                        result=gate.feed(json.loads(recognizer.Result()).get('text',''))
-                        if result:self.callback(result)
+                        text=json.loads(recognizer.Result()).get('text','')
+                        if normalize(text) in ('','ok','aura','ok aura'):continue
+                        command=parse(text)
+                        if command and command[0]=='terminate':
+                            other=' '.join(english_parts+[json.loads(english.FinalResult()).get('text','')])
+                            command=('terminate',{'spoken':command[1],'english':other})
+                        self.callback(('command',command));deadline=0;wake.Reset()
         except Exception:
             if not self.stop.is_set():self.callback(('error','Não foi possível acessar o microfone ou carregar o reconhecimento. Confira as permissões de microfone do Windows.'))

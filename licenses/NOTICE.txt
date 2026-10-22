@@ -6,3 +6,5 @@ Vosk Android uses JNA, available under Apache License 2.0 or LGPL 2.1; this dist
 https://github.com/java-native-access/jna
 
 The remaining dependencies retain their own licenses bundled by the package manager and PyInstaller.
+
+The English vosk-model-small-en-us-0.15 model is also redistributed under Apache License 2.0.

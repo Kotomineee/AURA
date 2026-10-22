@@ -65,9 +65,11 @@ class MainActivity : Activity() {
     private var lastNotifiedBuild=0
     private var updateMessage="Verificação automática ao abrir o aplicativo."
     private var voiceStatusText:TextView?=null
+    private var nextVoiceStart=0L
     private val voicePoll=object:Runnable{override fun run(){
         if(!updateForeground)return
         voiceStatusText?.text=VoiceInbox.message
+        ensureVoice()
         VoiceInbox.take()?.let{receiveVoice(it.second)}
         updateHandler.postDelayed(this,400)
     }}
@@ -224,9 +226,10 @@ class MainActivity : Activity() {
                 actionButton(c,"Ligar PC • Wake-on-LAN","power"){wake()}
                 val voice=card(body);voice.addView(text("Controle por voz • Ok Aura",18f,bold=true))
                 voiceStatusText=text(VoiceInbox.message,13f,AuraTheme.muted);voice.addView(voiceStatusText)
+                voiceStatusText?.setOnClickListener{ensureVoice(true)}
+                voice.addView(VoiceMeterView(this),LinearLayout.LayoutParams(-1,dp(72)))
                 voice.addView(text("Diga “Ok Aura”, aguarde o sinal e fale: “encerrar Discord”, “desligar em trinta minutos” ou “ligar o PC”.",13f))
                 voice.addView(text("A escuta é local. Em segundo plano, toque na notificação para conferir o comando. Ações de energia e encerramento pedem confirmação.",12f,AuraTheme.muted))
-                actionButton(voice,"Ativar / desativar escuta"){toggleVoice()}
                 val schedule=card(body);schedule.addView(text("PRÓXIMO AGENDAMENTO",11f,AuraTheme.muted));gap(schedule,10);schedule.addView(text(scheduleDescription(),14f))
                 actionButton(schedule,"Ver energia e agendamentos","calendar"){showPage("power")}
                 actionButton(body,"Conectar PC","connection"){importProfile()}
@@ -270,6 +273,7 @@ class MainActivity : Activity() {
         super.onResume()
         updateForeground=true
         if(!startupFailed){
+            VoiceInbox.paused=false;nextVoiceStart=0;ensureVoice()
             updateHandler.post(voicePoll)
             val prefs=getSharedPreferences("aura",MODE_PRIVATE)
             if(prefs.getBoolean("resume_download_install",false)){
@@ -285,20 +289,29 @@ class MainActivity : Activity() {
         }
     }
     override fun onPause(){updateForeground=false;updateHandler.removeCallbacks(voicePoll);updateHandler.removeCallbacks(updateCheck);super.onPause()}
-    private fun toggleVoice(){
-        if(VoiceInbox.active){stopService(android.content.Intent(this,VoiceService::class.java));VoiceInbox.message="Escuta desativada.";return}
+    private fun ensureVoice(reviewPermission:Boolean=false){
+        if(!updateForeground || startupFailed || VoiceInbox.active || VoiceInbox.paused)return
+        val now=android.os.SystemClock.elapsedRealtime()
         if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){
+            val prefs=getSharedPreferences("aura",MODE_PRIVATE)
+            if(prefs.getBoolean("voice_permission_requested",false) && !reviewPermission){VoiceInbox.message="Autorize o microfone para a escuta automática. Toque aqui para revisar.";return}
+            if(reviewPermission && prefs.getBoolean("voice_permission_requested",false) && !shouldShowRequestPermissionRationale(android.Manifest.permission.RECORD_AUDIO)){
+                startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:$packageName")));return
+            }
+            prefs.edit().putBoolean("voice_permission_requested",true).apply()
             val permissions=mutableListOf(android.Manifest.permission.RECORD_AUDIO)
             if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
             requestPermissions(permissions.toTypedArray(),130);return
         }
+        if(now<nextVoiceStart)return
+        nextVoiceStart=now+30000
         try{startForegroundService(android.content.Intent(this,VoiceService::class.java))}
         catch(_:Exception){VoiceInbox.message="Não foi possível iniciar a escuta. Verifique as permissões do microfone."}
     }
     override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray){
         super.onRequestPermissionsResult(requestCode,permissions,grantResults)
         if(requestCode==130){
-            if(updateForeground && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)==android.content.pm.PackageManager.PERMISSION_GRANTED)toggleVoice()
+            if(updateForeground && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)==android.content.pm.PackageManager.PERMISSION_GRANTED)ensureVoice()
             else VoiceInbox.message="Autorize o microfone para ativar “Ok Aura”."
         }
     }
@@ -313,12 +326,13 @@ class MainActivity : Activity() {
             "schedule"->confirm("Confirmar desligamento em ${value.seconds/60} minutos?"){command("shutdown",JSONObject().put("confirm",true).put("delay_seconds",value.seconds))}
             "terminate"->work{
                 val data=JSONArray(api("processes"))
-                val matches=(0 until data.length()).map{data.getJSONObject(it)}.filter{VoiceCommands.matchesProcess(it,value.argument)}
+                val rows=(0 until data.length()).map{data.getJSONObject(it)}
+                val matches=if(VoiceCommands.selectedReference(value.argument))rows.filter{selected?.let{s->sameProcess(it,s)}?:false}else VoiceCommands.candidates(rows,value)
                 safeUi{
                     fun choose(row:JSONObject){confirm("Encerrar ${row.getString("name")} (PID ${row.getInt("pid")})? Alterações não salvas podem ser perdidas."){command("processes/terminate",JSONObject().put("pid",row.getInt("pid")).put("name",row.getString("name")).put("created_at",row.getDouble("created_at")))}}
                     if(matches.size==1)choose(matches[0])
                     else if(matches.isNotEmpty())AlertDialog.Builder(this).setTitle("Selecione o processo").setItems(matches.map{"${it.getString("name")} • PID ${it.getInt("pid")}"}.toTypedArray()){_,index->choose(matches[index])}.setNegativeButton("Cancelar",null).show()
-                    else VoiceInbox.message="Programa não encontrado. Confira o nome e o PID na aba Processos."
+                    else VoiceInbox.message=if(VoiceCommands.selectedReference(value.argument))"Selecione o aplicativo na aba Processos e repita o comando." else "Não identifiquei o programa. Confira os nomes na aba Processos e repita."
                 }
                 "Consulta por voz concluída."
             }

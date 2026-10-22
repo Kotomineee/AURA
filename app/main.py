@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent
 if os.getenv('AURA_NATIVE') != '1':load_dotenv(ROOT.parent / ".env")
 TOKEN = os.getenv("ASSISTANT_TOKEN", "")
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
-app = FastAPI(title="AURA", version="0.1.3", docs_url=None, redoc_url=None)
+app = FastAPI(title="AURA", version="0.1.4", docs_url=None, redoc_url=None)
 shutdown_timer = None
 shutdown_at = None
 lock = threading.Lock()

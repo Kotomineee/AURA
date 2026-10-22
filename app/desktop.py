@@ -264,19 +264,25 @@ def main():
             show_status(result); admin_text.set('Agente administrador ativo. Inicialização automática configurada.')
         task('admin-setup',configure,complete)
     Button(admin_card,'Configurar administrador automático',setup_admin,kind='settings').pack(fill='x')
-    from .voice import Listener, matches_process
+    from .voice import Listener
+    from .voice_commands import candidates,selected_reference
+    from .visuals import VoiceMeter
     listener=None
     voice_card=card(pages['home']); voice_card.pack(fill='x',pady=(14,0))
     label(voice_card,'Controle por voz • Ok Aura',16,bold=True).pack(anchor='w')
-    voice_text=tk.StringVar(value='Ative a escuta e diga “Ok Aura”. O áudio é reconhecido neste computador.')
+    voice_text=tk.StringVar(value='Preparando escuta automática • reconhecimento local.')
     voice_label=label(voice_card,variable=voice_text,size=10,color=MUTED); voice_label.configure(wraplength=670); voice_label.pack(fill='x',pady=8)
+    voice_meter=VoiceMeter(voice_card);voice_meter.pack(fill='x',pady=(4,12))
     label(voice_card,'Exemplos: “desligar em trinta minutos”, “encerrar Discord”, “cancelar agendamento”.',10,MUTED).pack(anchor='w')
     def receive_voice(event):
         nonlocal listener
         kind,value=event
+        if kind=='level':voice_meter.set_level(value);return
         if kind in ('state','error'):
             voice_text.set(value)
-            if kind=='error':listener=None
+            if kind=='error':
+                listener=None;voice_meter.set_level(0)
+                root.after(15000,start_voice)
         elif kind=='awake':
             voice_text.set('Estou ouvindo. Diga o comando em até 10 segundos.')
             if os.name=='nt':
@@ -296,25 +302,24 @@ def main():
             elif command=='terminate':
                 def choose(data):
                     nonlocal selected
-                    matches=[r for r in data if matches_process(r,argument)]
+                    if selected_reference(argument):
+                        matches=[r for r in data if selected and r['pid']==selected['pid'] and r['created_at']==selected['created_at']]
+                        if not matches:
+                            navigate('processes');display_processes(data);voice_text.set('Selecione o aplicativo na aba Processos e repita o comando.');return
+                    else:matches=candidates(data,argument)
                     if len(matches)==1:
                         selected=matches[0]; terminate()
                     elif matches:
-                        display_processes(data); navigate('processes'); search.set(argument)
+                        display_processes(matches); navigate('processes'); search.set('')
                         voice_text.set('Há vários processos com esse nome. Selecione o PID na aba Processos.')
                     else:voice_text.set('Nenhum programa elegível com esse nome. Confira a aba Processos.')
                 task('voice-processes',lambda:api('processes'),choose)
-    def toggle_voice():
+    def start_voice():
         nonlocal listener
-        if listener:
-            listener.close(); listener=None; voice_text.set('Escuta desativada.'); voice_button.text='Ativar escuta “Ok Aura”'; voice_button.draw()
-            preferences.save(voice_enabled=False)
-        else:
-            voice_text.set('Preparando reconhecimento local…')
-            listener=Listener(lambda event:events.put(('voice-event',receive_voice,event,None,True)))
-            listener.start(); voice_button.text='Desativar escuta'; voice_button.draw()
-            preferences.save(voice_enabled=True)
-    voice_button=Button(voice_card,'Ativar escuta “Ok Aura”',toggle_voice); voice_button.pack(fill='x',pady=(8,0))
+        if closed or listener:return
+        voice_text.set('Preparando reconhecimento local…')
+        listener=Listener(lambda event:events.put(('voice-event',receive_voice,event,None,True)))
+        listener.start()
     update_card = card(pages['home']); update_card.pack(fill='x',pady=(14,0))
     label(update_card,'Atualizações • AURA '+VERSION,16,bold=True).pack(anchor='w')
     update_text = tk.StringVar(value='Consultando as Releases públicas do GitHub…')
@@ -572,14 +577,15 @@ def main():
         nonlocal closed
         if listener:listener.close()
         closed=True; pool.shutdown(wait=False,cancel_futures=True); icon_pool.shutdown(wait=False,cancel_futures=True); root.destroy()
-    root.protocol('WM_DELETE_WINDOW',close); navigate('home'); drain()
+    Button(pages['connection'],'Sair da AURA',close).pack(fill='x',pady=(14,0))
+    root.protocol('WM_DELETE_WINDOW',root.iconify); navigate('home'); drain()
     if '--check-ui' in sys.argv:
         from .native_runtime import DATA
         (DATA/'ui-check.txt').write_text('OK',encoding='utf-8'); root.after(100,close)
     else:
         root.after(200,configure_startup)
         root.after(400,start_agent)
-        if prefs.get('voice_enabled',False):root.after(1000,toggle_voice)
+        root.after(1000,start_voice)
         root.after(2000,periodic_updates)
         if '--startup' in sys.argv:root.iconify()
     root.mainloop()

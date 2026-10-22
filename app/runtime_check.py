@@ -58,7 +58,7 @@ def run():
             extracted = process_icons._extract(sys.executable)
             assert extracted, 'The packaged executable must expose its actual icon'
             assert Image.open(io.BytesIO(base64.b64decode(extracted))).size == (32,32)
-            assert VERSION == '0.1.3' and BUILD == 405
+            assert VERSION == '0.1.4' and BUILD == 406
             import sounddevice  # Import only: never open an input device here.
             from vosk import Model, KaldiRecognizer, SetLogLevel
             from . import voice, admin
@@ -69,6 +69,11 @@ def run():
             recognizer.AcceptWaveform(bytes(32000))
             assert json.loads(recognizer.FinalResult()).get('text')==''
             assert model.vosk_model_find_word('aura')>=0 and model.vosk_model_find_word('ok')>=0
+            wake=KaldiRecognizer(model,16000,json.dumps(['ok aura','[unk]']))
+            english_model=Model(str(resources/'voice-model-en'))
+            english=KaldiRecognizer(english_model,16000)
+            english.AcceptWaveform(bytes(32000))
+            assert json.loads(english.FinalResult()).get('text')==''
             import hashlib
             metadata=json.loads((resources/'admin-agent.json').read_text(encoding='utf-8'))
             assert hashlib.sha256((resources/'admin-agent.zip').read_bytes()).hexdigest()==metadata['sha256']
@@ -76,7 +81,7 @@ def run():
             report = {'result': 'PASS', 'tls': c.version(), 'certificate_verification': True,
                       'png': True, 'tkinter_import': True, 'psutil_import': True,
                       'actual_executable_icon': True, 'version': VERSION, 'build': BUILD,
-                      'voice_model': True, 'voice_wake_vocabulary': True, 'microphone_opened': False,
+                      'voice_model': True, 'english_voice_model':True, 'wake_grammar':True, 'voice_wake_vocabulary': True, 'microphone_opened': False,
                       'protected_agent_payload': True, 'windows_created': 0, 'network_connections': 0}
             destination = os.environ.get('AURA_RUNTIME_CHECK_OUTPUT')
             if destination:

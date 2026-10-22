@@ -10,6 +10,27 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[33])
 class VoiceTest {
+    @Test fun understandsVariationsAndDynamicEnglishCatalog(){
+        for(phrase in listOf("desligar Windows","desligue o computador","pode desligar meu notebook por favor","quero que voce desligue o sistema"))assertEquals(VoiceCommand("shutdown"),VoiceCommands.parse(phrase))
+        assertEquals(VoiceCommand("restart"),VoiceCommands.parse("reinicie o Windows"))
+        assertEquals(VoiceCommand("wake"),VoiceCommands.parse("acorde meu computador"))
+        assertEquals(VoiceCommand("schedule",seconds=1500),VoiceCommands.parse("desliga o windows daqui a vinte e cinco minutos"))
+        assertTrue(VoiceCommands.selectedReference(VoiceCommands.parse("encerre esse app")!!.argument))
+        val rows=listOf(JSONObject().put("name","STOVEClient.exe").put("pid",123),JSONObject().put("name","ZetaLauncher.exe").put("pid",124))
+        assertEquals(listOf(rows[0]),VoiceCommands.candidates(rows,VoiceCommand("terminate","estou",english="close stove")))
+        assertEquals(listOf(rows[1]),VoiceCommands.candidates(rows,VoiceCommand("terminate","zeta")))
+        assertTrue(VoiceCommands.candidates(rows,VoiceCommand("terminate","nada",english="anything")).isEmpty())
+    }
+    @Test fun homeHasMicrophoneMeterWithoutActivationButton(){
+        val controller=org.robolectric.Robolectric.buildActivity(MainActivity::class.java).setup()
+        try{
+            val root=controller.get().window.decorView
+            fun all(view:android.view.View):List<android.view.View> = listOf(view)+if(view is android.view.ViewGroup)(0 until view.childCount).flatMap{all(view.getChildAt(it))}else emptyList()
+            val views=all(root)
+            assertTrue(views.any{it is VoiceMeterView})
+            assertFalse(views.filterIsInstance<android.widget.Button>().any{it.text.toString().contains("ativar escuta",ignoreCase=true)})
+        }finally{controller.pause().stop().destroy()}
+    }
     @Test fun requiresWakeAndExpires(){
         val gate=VoiceCommands.Gate()
         assertNull(gate.feed("desligar pc",100000))
