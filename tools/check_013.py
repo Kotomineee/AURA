@@ -9,17 +9,8 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 with tempfile.TemporaryDirectory() as temporary:
     os.environ['AURA_DATA_DIR']=temporary
-    from app.voice import WakeGate,parse,matches_process
+    from app.voice_commands import parse,matches_process
     from app.admin import installation_script
-    gate=WakeGate()
-    assert gate.feed('desligar o pc',100) is None
-    assert gate.feed('Ok Aura',100)==('awake',None)
-    assert gate.feed('desligar em trinta minutos',105)==('command',('schedule',1800))
-    assert gate.feed('reiniciar pc',106) is None
-    assert gate.feed('Ok Aura',110)==('awake',None)
-    assert gate.feed('desligar pc',121) is None
-    assert gate.feed('Ok Aura encerrar Discord',122)==('command',('terminate','discord'))
-    assert gate.feed('não desligue o pc',123) is None
     for phrase in ('não desligar pc','desligar em zero minutos','desligar em 999999999 horas','executar cmd','fechar','desligar pc agora talvez'):
         assert parse(phrase) is None,phrase
     assert parse('cancelar agendamento')==('cancel',None)

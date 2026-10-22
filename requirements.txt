@@ -6,3 +6,4 @@ cryptography>=43
 Pillow>=10,<13
 vosk==0.3.45
 sounddevice==0.5.3
+pystray==0.19.5

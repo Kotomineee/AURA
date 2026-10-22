@@ -58,12 +58,16 @@ def run():
             extracted = process_icons._extract(sys.executable)
             assert extracted, 'The packaged executable must expose its actual icon'
             assert Image.open(io.BytesIO(base64.b64decode(extracted))).size == (32,32)
-            assert VERSION == '0.1.5' and BUILD == 407
+            assert VERSION == '0.1.6' and BUILD == 408
             import sounddevice  # Import only: never open an input device here.
             from vosk import Model, KaldiRecognizer, SetLogLevel
-            from . import voice, admin
+            from . import voice, admin, tray, wake_policy
+            import pystray
+            from pystray import _win32
             SetLogLevel(-1)
             resources=Path(sys._MEIPASS)
+            assert Image.open(resources/'aura.ico').size[0]>0
+            assert not wake_policy.WakePolicy().accepts_command(100)
             model=Model(str(resources/'voice-model'))
             recognizer=KaldiRecognizer(model,16000)
             recognizer.AcceptWaveform(bytes(32000))

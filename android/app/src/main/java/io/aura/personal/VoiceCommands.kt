@@ -54,17 +54,7 @@ object VoiceCommands {
         }
         return null
     }
-    class Gate {
-        private var deadline=0L
-        fun feed(value:String,now:Long):Pair<String,VoiceCommand?>? {
-            var text=normalize(value)
-            val wake=Regex("^(?:ok|okay|oquei) aura(?: |$)").find(text)
-            if(wake!=null){deadline=now+10000;text=text.substring(wake.range.last+1).trim();if(text.isEmpty())return "awake" to null}
-            else if(now>=deadline)return null
-            if(text.isEmpty())return null
-            deadline=0;return "command" to parse(text)
-        }
-    }
+
 }
 
 object VoiceInbox {

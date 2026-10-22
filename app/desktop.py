@@ -59,7 +59,7 @@ def main():
     settings=identity(); context=ssl.create_default_context(cafile=settings['cert'])
     pool=ThreadPoolExecutor(max_workers=4,thread_name_prefix='aura-client')
     icon_pool=ThreadPoolExecutor(max_workers=2,thread_name_prefix='aura-icons-client')
-    events=queue.Queue(); pending=set(); closed=False; connected=False
+    events=queue.Queue(); pending=set(); closed=False; connected=False;quitting=False;tray=None
     rows=[]; visible=[]; selected=None; generation=0; images=OrderedDict(); redraw_scheduled=False
     agent_build=0;process_list_limited=False
     banner=tk.StringVar(value='Inicie o agente na Visão geral para conectar seu computador.')
@@ -84,7 +84,7 @@ def main():
             except (ValueError,OSError):detail='Falha no comando'
             raise RuntimeError(str(detail)) from None
     def task(key,fn,callback,quiet=False,executor=None):
-        if closed or key in pending:return
+        if closed or (quitting and key!="quit") or key in pending:return
         pending.add(key)
         if not quiet:banner.set('Carregando…')
         def work():
@@ -98,6 +98,7 @@ def main():
             try:key,callback,result,error,quiet=events.get_nowait()
             except queue.Empty:break
             pending.discard(key)
+            if quitting and key not in ('quit','tray-event'):continue
             if error:
                 if not quiet:banner.set('Não foi possível concluir: '+error)
                 if key in ('status','start'):
@@ -286,6 +287,7 @@ def main():
     label(voice_card,'Exemplos: “desligar em trinta minutos”, “encerrar Discord”, “cancelar agendamento”.',10,MUTED).pack(anchor='w')
     def receive_voice(event):
         nonlocal listener
+        if quitting:return
         kind,value=event
         if kind=='level':voice_meter.set_level(value);return
         if kind in ('state','error'):
@@ -294,11 +296,12 @@ def main():
                 listener=None;voice_meter.set_level(0)
                 root.after(15000,start_voice)
         elif kind=='awake':
+            restore();navigate('home')
             voice_text.set('Estou ouvindo. Diga o comando em até 10 segundos.')
             if os.name=='nt':
                 import winsound
                 winsound.MessageBeep()
-            root.after(10000,lambda:voice_text.set('Diga “Ok Aura” e depois o comando.') if listener else None)
+            root.after(10000,lambda:voice_text.set('Diga “Ok Aura”, aguarde o sinal e diga o comando.') if listener else None)
         elif kind=='command':
             voice_text.set('Diga “Ok Aura” para outro comando.')
             if not value:voice_text.set('Comando não reconhecido. Diga “Ok Aura” e tente novamente.');return
@@ -326,7 +329,7 @@ def main():
                 task('voice-processes',lambda:api('processes'),choose)
     def start_voice():
         nonlocal listener
-        if closed or listener:return
+        if closed or quitting or listener:return
         voice_text.set('Preparando reconhecimento local…')
         listener=Listener(lambda event:events.put(('voice-event',receive_voice,event,None,True)))
         listener.start()
@@ -394,7 +397,7 @@ def main():
         task('install-update', attempt, ready)
     def check_updates(manual=False):
         nonlocal update_busy
-        if update_busy or installing_update:return
+        if quitting or update_busy or installing_update:return
         update_busy=True;check_button.set_enabled(False);update_text.set('Consultando a versão publicada no GitHub…')
         def check():
             try:return updates.check(updates.DEFAULT_REPOSITORY)
@@ -623,10 +626,50 @@ def main():
     Button(pages['history'],'Atualizar histórico',refresh_logs,kind='refresh').pack(fill='x')
     def close():
         nonlocal closed
+        if closed:return
         if listener:listener.close()
+        if tray:tray.close()
         closed=True; pool.shutdown(wait=False,cancel_futures=True); icon_pool.shutdown(wait=False,cancel_futures=True); root.destroy()
-    Button(pages['connection'],'Sair da AURA',close).pack(fill='x',pady=(14,0))
-    root.protocol('WM_DELETE_WINDOW',root.iconify); navigate('home'); drain()
+    def restore():
+        if closed:return
+        root.deiconify();root.lift();root.focus_force()
+    def hide_to_tray(attempt=0):
+        if closed:return
+        if tray and tray.hide(root.withdraw):return
+        if tray and not tray.error and attempt<20:
+            root.after(100,lambda:hide_to_tray(attempt+1));return
+        restore();banner.set('Bandeja indisponível. Use “Encerrar AURA” nos Ajustes para sair.')
+    def quit_application():
+        nonlocal quitting,listener
+        if closed or quitting:return
+        if installing_update:
+            restore();banner.set('Aguarde a conclusão da atualização para encerrar.');return
+        quitting=True
+        if listener:listener.close();listener=None
+        voice_meter.set_level(0)
+        def finish(result):
+            nonlocal quitting
+            if result:
+                quitting=False;restore();banner.set('Não foi possível encerrar o agente: '+result);start_voice();return
+            close()
+        def stop():
+            from .tray import stop_agent
+            try:
+                deadline=time.monotonic()+22
+                while 'start' in pending:
+                    if time.monotonic()>=deadline:raise RuntimeError('Aguarde a inicialização do agente e tente novamente.')
+                    time.sleep(.05)
+                stop_agent(api,psutil.Process,os.getpid());return None
+            except Exception as exc:return str(exc)
+        task('quit',stop,finish,quiet=True)
+    def tray_request(action):
+        if action=='exit':quit_application()
+        else:restore()
+    Button(pages['connection'],'Encerrar AURA',quit_application).pack(fill='x',pady=(14,0))
+    if '--check-ui' not in sys.argv:
+        from .tray import Tray
+        tray=Tray(lambda action:events.put(('tray-event',tray_request,action,None,True)))
+    root.protocol('WM_DELETE_WINDOW',hide_to_tray); navigate('home'); drain()
     if '--check-ui' in sys.argv:
         from .native_runtime import DATA
         (DATA/'ui-check.txt').write_text('OK',encoding='utf-8'); root.after(100,close)
@@ -635,7 +678,7 @@ def main():
         root.after(400,start_agent)
         root.after(1000,start_voice)
         root.after(2000,periodic_updates)
-        if '--startup' in sys.argv:root.iconify()
+        if '--startup' in sys.argv:root.after(100,hide_to_tray)
     root.mainloop()
 
 

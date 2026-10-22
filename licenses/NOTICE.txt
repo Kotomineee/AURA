@@ -8,3 +8,8 @@ https://github.com/java-native-access/jna
 The remaining dependencies retain their own licenses bundled by the package manager and PyInstaller.
 
 The English vosk-model-small-en-us-0.15 model is also redistributed under Apache License 2.0.
+
+The Windows tray uses pystray 0.19.5, Copyright (c) 2016-2023 Moses Palmer,
+licensed under LGPL v3. The unmodified library and its license are included.
+Library source: https://github.com/moses-palmer/pystray/tree/v0.19.5
+See pystray-COPYING.txt and pystray-LGPL.txt.

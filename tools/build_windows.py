@@ -20,12 +20,14 @@ if trust_resource.is_file():
     # Keep its trust policy intact when the module is frozen into the executable.
     runtime_data = ['--add-data', str(trust_resource) + ':.']
 PyInstaller.__main__.run([
-    '--noconfirm', '--windowed', '--onefile', '--name', 'AURA-Windows-0.1.5',
+    '--noconfirm', '--windowed', '--onefile', '--name', 'AURA-Windows-0.1.6',
     '--distpath', os.environ.get('AURA_DIST_DIR', str(root / 'dist')),
     '--workpath', os.environ.get('AURA_BUILD_DIR', str(root / 'build')),
     '--specpath', os.environ.get('AURA_SPEC_DIR', str(root)),
     '--version-file', str(root / 'tools/windows-version.txt'),
     '--icon', str(root / 'tools/aura.ico'),
+    '--add-data', str(root/'tools/aura.ico')+':.',
+    '--collect-all', 'pystray', '--hidden-import', 'pystray._win32',
     '--collect-all', 'uvicorn', '--collect-all', 'fastapi', '--collect-all', 'cryptography',
     '--collect-all', 'vosk', '--collect-all', 'sounddevice', '--collect-all', '_sounddevice_data',
     '--add-data', str(model)+':voice-model',

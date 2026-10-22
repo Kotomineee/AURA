@@ -66,50 +66,73 @@ class VoiceService:Service() {
     private fun listen(){
         var recorder:AudioRecord?=null
         var pt:Model?=null;var en:Model?=null
-        var wake:Recognizer?=null;var command:Recognizer?=null;var english:Recognizer?=null
+        var wake:Recognizer?=null;var verifier:Recognizer?=null;var command:Recognizer?=null;var english:Recognizer?=null
         try {
             pt=Model(unpack("voice-model.zip","voice-model").absolutePath)
             en=Model(unpack("voice-model-en.zip","voice-model-en").absolutePath)
             if(destroyed)return
             wake=Recognizer(pt,16000f,JSONArray(listOf("ok aura","[unk]")).toString())
+            wake.setWords(true);verifier=Recognizer(pt,16000f);verifier.setWords(true)
             command=Recognizer(pt,16000f);english=Recognizer(en,16000f)
             val size=maxOf(AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT),6400)
             recorder=AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,size)
             check(recorder.state==AudioRecord.STATE_INITIALIZED)
             recorder.startRecording();check(recorder.recordingState==AudioRecord.RECORDSTATE_RECORDING)
             state("Escuta ativa • diga “Ok Aura”.")
-            val samples=ShortArray(1280);var deadline=0L
+            val samples=ShortArray(1280);val policy=WakePolicy()
+            val history=java.util.ArrayDeque<ShortArray>()
             val englishParts=ArrayList<String>()
+            fun resetAudio(){
+                wake.reset();verifier.reset();command.reset();english.reset();englishParts.clear();history.clear()
+                // Drop buffered ambient speech; only fresh audio can become a command.
+                recorder.stop();recorder.startRecording()
+            }
             while(!destroyed && !Thread.currentThread().isInterrupted){
                 val count=recorder.read(samples,0,samples.size,AudioRecord.READ_BLOCKING)
                 check(count>0)
                 VoiceInbox.level=(sqrt((0 until count).sumOf{samples[it].toDouble()*samples[it]}/count)/6000).toFloat().coerceIn(0f,1f)
                 val now=SystemClock.elapsedRealtime()
-                if(deadline!=0L && now>=deadline){deadline=0;wake.reset();state("Escuta ativa • diga “Ok Aura”.")}
-                if(deadline==0L){
-                    val final=wake.acceptWaveForm(samples,count)
-                    val hypothesis=JSONObject(if(final)wake.result else wake.partialResult).optString(if(final)"text" else "partial")
-                    if(VoiceCommands.normalize(hypothesis)=="ok aura"){
-                        deadline=now+10000;command.reset();english.reset();englishParts.clear()
-                        state("Estou ouvindo. Diga o comando.")
-                        handler.post{if(!destroyed){val tone=ToneGenerator(AudioManager.STREAM_NOTIFICATION,45);tone.startTone(ToneGenerator.TONE_PROP_BEEP,90);handler.postDelayed({tone.release()},150)}}
+                if(policy.expire(now)){resetAudio();state("Escuta ativa • diga “Ok Aura”.");continue}
+                if(policy.until==0L){
+                    if(now<policy.cooldown)continue
+                    if(history.size>=60)history.removeFirst()
+                    history.addLast(samples.copyOf(count))
+                    if(wake.acceptWaveForm(samples,count)){
+                        val proposal=JSONObject(wake.result)
+                        if(VoiceCommands.normalize(proposal.optString("text"))=="ok aura"){
+                            verifier.reset()
+                            val segments=ArrayList<JSONObject>()
+                            for(block in history)if(verifier.acceptWaveForm(block,block.size))segments.add(JSONObject(verifier.result))
+                            segments.add(JSONObject(verifier.finalResult))
+                            val words=JSONArray()
+                            for(segment in segments){val list=segment.optJSONArray("result");if(list!=null)for(i in 0 until list.length())words.put(list.getJSONObject(i))}
+                            val verification=JSONObject().put("text",segments.joinToString(" "){it.optString("text")}.trim()).put("result",words)
+                            if(policy.arm(proposal,verification,SystemClock.elapsedRealtime())){
+                                resetAudio();state("Estou ouvindo. Diga o comando em até 10 segundos.")
+                                handler.post{if(!destroyed){val tone=ToneGenerator(AudioManager.STREAM_NOTIFICATION,45);tone.startTone(ToneGenerator.TONE_PROP_BEEP,90);handler.postDelayed({tone.release()},150)}}
+                                continue
+                            }
+                        }
+                        wake.reset();history.clear()
                     }
                     continue
                 }
+                if(!policy.acceptsCommand(now))continue
                 if(english.acceptWaveForm(samples,count))englishParts.add(JSONObject(english.result).optString("text"))
                 if(command.acceptWaveForm(samples,count)){
                     val text=JSONObject(command.result).optString("text")
                     if(VoiceCommands.normalize(text) in listOf("","ok","aura","ok aura"))continue
                     var parsed=VoiceCommands.parse(text)
                     if(parsed?.action=="terminate")parsed=parsed.copy(english=(englishParts+JSONObject(english.finalResult).optString("text")).joinToString(" "))
-                    VoiceInbox.offer(parsed);deadline=0;wake.reset()
+                    if(policy.acceptsCommand(SystemClock.elapsedRealtime()))VoiceInbox.offer(parsed)
+                    policy.finish(SystemClock.elapsedRealtime());resetAudio()
                     state("Comando recebido • confira na AURA.")
                 }
             }
         }catch(_:Exception){if(!destroyed){VoiceInbox.message="Microfone indisponível. Confira as permissões e abra a AURA novamente.";handler.post{stopSelf()}}}
         finally{
             try{recorder?.stop()}catch(_:Exception){};recorder?.release()
-            wake?.close();command?.close();english?.close();pt?.close();en?.close();VoiceInbox.level=0f
+            wake?.close();verifier?.close();command?.close();english?.close();pt?.close();en?.close();VoiceInbox.level=0f
         }
     }
     override fun onDestroy(){

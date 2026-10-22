@@ -20,16 +20,16 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[33])
 class UpdateAndIconsTest {
-    private val url="https://github.com/Kotomineee/AURA/releases/download/v0.1.5/AURA-Android-0.1.5.apk"
-    private fun release()=JSONObject().put("tag_name","v0.1.5").put("published_at","2026-10-21T00:00:00Z").put("assets",JSONArray().put(JSONObject().put("name","AURA-Android-0.1.5.apk").put("browser_download_url",url)).put(JSONObject().put("name","AURA-Windows-0.1.5.exe").put("browser_download_url","https://github.com/Kotomineee/AURA/releases/download/v0.1.5/AURA-Windows-0.1.5.exe")))
-    private fun manifest()=JSONObject().put("version","0.1.5").put("build",407).put("assets",JSONObject().put("android","AURA-Android-0.1.5.apk").put("windows","AURA-Windows-0.1.5.exe")).put("sha256",JSONObject().put("android","a".repeat(64)).put("windows","b".repeat(64)))
+    private val url="https://github.com/Kotomineee/AURA/releases/download/v0.1.6/AURA-Android-0.1.6.apk"
+    private fun release()=JSONObject().put("tag_name","v0.1.6").put("published_at","2026-10-21T00:00:00Z").put("assets",JSONArray().put(JSONObject().put("name","AURA-Android-0.1.6.apk").put("browser_download_url",url)).put(JSONObject().put("name","AURA-Windows-0.1.6.exe").put("browser_download_url","https://github.com/Kotomineee/AURA/releases/download/v0.1.6/AURA-Windows-0.1.6.exe")))
+    private fun manifest()=JSONObject().put("version","0.1.6").put("build",408).put("assets",JSONObject().put("android","AURA-Android-0.1.6.apk").put("windows","AURA-Windows-0.1.6.exe")).put("sha256",JSONObject().put("android","a".repeat(64)).put("windows","b".repeat(64)))
 
     @Test fun upgradeUsesMonotonicBuildAcrossVersionRename(){
-        assertEquals(407,AuraVersion.build)
-        assertEquals("0.1.5",AuraVersion.name)
+        assertEquals(408,AuraVersion.build)
+        assertEquals("0.1.6",AuraVersion.name)
         assertTrue(UpdateClient.parse(release(),manifest(),402).available)
         assertTrue(UpdateClient.parse(release(),manifest(),403).available)
-        assertFalse(UpdateClient.parse(release(),manifest(),407).available)
+        assertFalse(UpdateClient.parse(release(),manifest(),408).available)
     }
     @Test fun rejectsExternalDownloadAndIncompleteRelease(){
         val changed=release();changed.getJSONArray("assets").getJSONObject(0).put("browser_download_url","https://evil.example/a.apk")

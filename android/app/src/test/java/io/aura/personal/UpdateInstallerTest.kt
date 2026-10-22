@@ -26,7 +26,7 @@ class UpdateInstallerTest {
         val hash=MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString(""){"%02x".format(it.toInt() and 255)}
         UpdateInstaller.verifyDigest(file,hash)
         assertThrows(IllegalArgumentException::class.java){UpdateInstaller.verifyDigest(file,"0".repeat(64))}
-        assertThrows(IllegalArgumentException::class.java){UpdateInstaller.verifyPackage(context(),file,UpdateClient.Result(true,"0.1.6",408,"https://github.com/Kotomineee/AURA/releases/download/v0.1.3/a.apk",hash))}
+        assertThrows(IllegalArgumentException::class.java){UpdateInstaller.verifyPackage(context(),file,UpdateClient.Result(true,"0.1.7",409,"https://github.com/Kotomineee/AURA/releases/download/v0.1.3/a.apk",hash))}
     }
     @Test fun providerOnlyGrantsReadAccessToTheDownloadedApk(){
         val ctx=context();val provider=UpdateApkProvider()
@@ -44,8 +44,8 @@ class UpdateInstallerTest {
     @Test fun pendingUpdateSurvivesActivityRestartAndCleansAfterUpgrade(){
         val ctx=context();val file=UpdateInstaller.file(ctx);file.parentFile!!.mkdirs();file.writeBytes(byteArrayOf(1))
         val metadata=File(file.parentFile,"pending.json")
-        metadata.writeText(JSONObject().put("version","0.1.6").put("build",408).put("url","https://github.com/Kotomineee/AURA/releases/download/v0.1.3/a.apk").put("sha256","a".repeat(64)).toString())
-        assertEquals(408,UpdateInstaller.pending(ctx)!!.build)
+        metadata.writeText(JSONObject().put("version","0.1.7").put("build",409).put("url","https://github.com/Kotomineee/AURA/releases/download/v0.1.3/a.apk").put("sha256","a".repeat(64)).toString())
+        assertEquals(409,UpdateInstaller.pending(ctx)!!.build)
         metadata.writeText(JSONObject().put("version","0.1.3").put("build",404).put("url","https://github.com/Kotomineee/AURA/releases/download/v0.1.3/a.apk").put("sha256","a".repeat(64)).toString())
         assertNull(UpdateInstaller.pending(ctx));assertFalse(file.exists())
     }

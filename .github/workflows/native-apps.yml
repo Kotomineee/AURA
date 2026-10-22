@@ -24,7 +24,7 @@ jobs:
         working-directory: android
       - uses: actions/upload-artifact@v4
         with:
-          name: AURA-Android-0.1.5
+          name: AURA-Android-0.1.6
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   windows:
@@ -42,13 +42,14 @@ jobs:
       - run: python tools/check_013.py
       - run: python tools/check_014.py
       - run: python tools/check_015.py
+      - run: python tools/check_016.py
       - run: python tools/check_update_installer.py
       - run: python tools/build_windows.py
-      - run: python tools/check_packaged_runtime.py dist/AURA-Windows-0.1.5.exe
+      - run: python tools/check_packaged_runtime.py dist/AURA-Windows-0.1.6.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: AURA-Windows-0.1.5
-          path: dist/AURA-Windows-0.1.5.exe
+          name: AURA-Windows-0.1.6
+          path: dist/AURA-Windows-0.1.6.exe
           if-no-files-found: error
   release_files:
     needs: [android, windows]
@@ -63,11 +64,11 @@ jobs:
           path: artifacts
       - run: |
           mkdir -p release
-          cp artifacts/AURA-Windows-0.1.5/AURA-Windows-0.1.5.exe release/
-          cp artifacts/AURA-Android-0.1.5/app-debug.apk release/AURA-Android-0.1.5.apk
-          python tools/make_update_manifest.py --windows release/AURA-Windows-0.1.5.exe --android release/AURA-Android-0.1.5.apk --output release/aura-update.json
+          cp artifacts/AURA-Windows-0.1.6/AURA-Windows-0.1.6.exe release/
+          cp artifacts/AURA-Android-0.1.6/app-debug.apk release/AURA-Android-0.1.6.apk
+          python tools/make_update_manifest.py --windows release/AURA-Windows-0.1.6.exe --android release/AURA-Android-0.1.6.apk --output release/aura-update.json
       - uses: actions/upload-artifact@v4
         with:
-          name: AURA-Release-0.1.5
+          name: AURA-Release-0.1.6
           path: release/
           if-no-files-found: error
