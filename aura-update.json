@@ -1,12 +1,12 @@
 {
-  "version": "0.1.4",
-  "build": 406,
+  "version": "0.1.5",
+  "build": 407,
   "assets": {
-    "windows": "AURA-Windows-0.1.4.exe",
-    "android": "AURA-Android-0.1.4.apk"
+    "windows": "AURA-Windows-0.1.5.exe",
+    "android": "AURA-Android-0.1.5.apk"
   },
   "sha256": {
-    "windows": "8348896320871f66433b07f399887b78cb92ba42635871abb33eacdcf1cb7dc9",
-    "android": "77dc3468d447cb745d20d9a80b52323eb0e57b48a9c0f6c34144ee5d765a98ca"
+    "windows": "e5282188c062e4f80d7010aa7eff047b9401fb527353f8771d8873c2f3f817a2",
+    "android": "cf0efc337c4ff93ad3ecfc476e11445cb4b63602af3688b85bbd8807897bd6aa"
   }
 }

@@ -50,11 +50,13 @@ class MainActivity : Activity() {
     private lateinit var status:TextView
     private lateinit var summary:TextView
     private lateinit var connectionDot:TextView
+    private lateinit var settingsAction:ImageButton
     private lateinit var title:TextView
     private lateinit var subtitle:TextView
     private lateinit var cpu:MetricView
     private lateinit var ram:MetricView
     private lateinit var progress:ProgressBar
+    private lateinit var metricsSection:LinearLayout
     private val executor=Executors.newSingleThreadExecutor()
     private val iconExecutor=Executors.newFixedThreadPool(2)
     private val updateExecutor=Executors.newSingleThreadExecutor()
@@ -64,6 +66,10 @@ class MainActivity : Activity() {
     private var updateForeground=false
     private var lastNotifiedBuild=0
     private var updateMessage="Verificação automática ao abrir o aplicativo."
+    private var availableUpdate:UpdateClient.Result?=null
+    private var updateStatusText:TextView?=null
+    private var updateProgressView:ProgressBar?=null
+    private var updatePercent=-1
     private var voiceStatusText:TextView?=null
     private var nextVoiceStart=0L
     private val voicePoll=object:Runnable{override fun run(){
@@ -83,6 +89,7 @@ class MainActivity : Activity() {
     private var lastStatus:JSONObject?=null
     private var query=""
     private var allRows=emptyList<JSONObject>()
+    private var processListLimited=false
     private var filteredRows=emptyList<JSONObject>()
     private var selected:JSONObject?=null
     private var adapter:ProcessAdapter?=null
@@ -159,8 +166,9 @@ class MainActivity : Activity() {
             insets
         }
         val header=horizontal().apply{setPadding(dp(20),dp(10),dp(12),dp(10))}
-        header.addView(text("A U R A",25f),LinearLayout.LayoutParams(0,-2,1f))
-        val settings=ImageButton(this).apply{setImageDrawable(AuraIcon("settings"));background=null;contentDescription="Ajustes de conexão";setPadding(dp(12),dp(12),dp(12),dp(12));setOnClickListener{showPage("settings")}}
+        header.addView(text("AURA",26f,bold=true),LinearLayout.LayoutParams(0,-2,1f))
+        val settings=ImageButton(this).apply{setImageDrawable(AuraIcon("settings"));background=AuraTheme.surface(this@MainActivity,AuraTheme.panel,24);contentDescription="Configurações";setPadding(dp(12),dp(12),dp(12),dp(12));setOnClickListener{showPage("settings")}}
+        settingsAction=settings
         header.addView(settings,LinearLayout.LayoutParams(dp(48),dp(48)));topSection.addView(header)
         val connection=horizontal().apply{setPadding(dp(22),dp(12),dp(20),dp(12));background=AuraTheme.surface(this@MainActivity,AuraTheme.bg,0);setOnClickListener{showPage("settings")};isFocusable=true;contentDescription="Estado do PC e conexão"}
         connectionDot=text("●",22f,AuraTheme.muted);connection.addView(connectionDot,LinearLayout.LayoutParams(dp(32),-2))
@@ -170,6 +178,7 @@ class MainActivity : Activity() {
         title=text("Visão geral",24f,bold=true);subtitle=text("Seu computador, conectado a você.",12f,AuraTheme.muted)
         heading.addView(title);gap(heading,5);heading.addView(subtitle);topSection.addView(heading)
         val metrics=horizontal().apply{setPadding(dp(16),0,dp(16),dp(12))}
+        metricsSection=metrics
         cpu=MetricView(this,"cpu");ram=MetricView(this,"ram")
         metrics.addView(cpu,LinearLayout.LayoutParams(0,dp(100),1f).apply{rightMargin=dp(6)})
         metrics.addView(ram,LinearLayout.LayoutParams(0,dp(100),1f).apply{leftMargin=dp(6)})
@@ -180,15 +189,15 @@ class MainActivity : Activity() {
         shell.addView(progress,LinearLayout.LayoutParams(-1,dp(2)))
         status=text("Conecte o PC para começar.",11f,AuraTheme.muted).apply{setPadding(dp(18),dp(6),dp(18),dp(6));accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE;maxLines=3;ellipsize=TextUtils.TruncateAt.END}
         shell.addView(status)
-        val nav=horizontal().apply{background=AuraTheme.surface(this@MainActivity,AuraTheme.bg,0);setPadding(dp(4),dp(4),dp(4),dp(4))}
+        val nav=horizontal().apply{background=AuraTheme.surface(this@MainActivity,AuraTheme.panel,24);setPadding(dp(6),dp(6),dp(6),dp(6))}
         bottomNavigation=nav
-        for((key,label,kind) in listOf(Triple("home","Início","home"),Triple("processes","Processos","processes"),Triple("power","Energia","power"),Triple("settings","Ajustes","settings"))){
+        for((key,label,kind) in listOf(Triple("home","Início","home"),Triple("processes","Aplicativos","processes"),Triple("power","Energia","power"))){
             val item=vertical().apply{gravity=Gravity.CENTER;minimumHeight=dp(58);background=RippleDrawable(ColorStateList.valueOf(0x2231D0C3),null,AuraTheme.surface(this@MainActivity));isFocusable=true;contentDescription=label;setOnClickListener{showPage(key)}}
             item.addView(ImageView(this).apply{setImageDrawable(AuraIcon(kind));importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO},LinearLayout.LayoutParams(dp(23),dp(23)))
             item.addView(text(label,11f,AuraTheme.muted).apply{gravity=Gravity.CENTER},LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(4)})
             nav.addView(item,LinearLayout.LayoutParams(0,-2,1f));navButtons[key]=item
         }
-        shell.addView(nav)
+        shell.addView(nav,LinearLayout.LayoutParams(-1,-2).apply{setMargins(dp(16),dp(6),dp(16),dp(10))})
         try{
             getSharedPreferences("aura",MODE_PRIVATE).getString("profile",null)?.let{profile=JSONObject(decrypt(it))}
             summary.text=profile?.let{"PC salvo\n"+it.getString("name")}?:"Nenhum PC conectado"
@@ -209,31 +218,34 @@ class MainActivity : Activity() {
     override fun onSaveInstanceState(outState:Bundle){outState.putString("page",currentPage);outState.putString("query",query);super.onSaveInstanceState(outState)}
 
     private fun showPage(key:String,load:Boolean=true){
-        currentPage=key;page.removeAllViews();adapter=null;selectedCard=null;resultCount=null
-        val names=mapOf("home" to Pair("Visão geral","Seu computador, conectado a você."),"processes" to Pair("Processos","Veja e gerencie os aplicativos do seu computador."),"power" to Pair("Energia","Controle e agendamentos do computador."),"settings" to Pair("Conexão","Conecte seu Android à AURA do Windows."),"history" to Pair("Histórico","Atividade recente do agente."))
+        currentPage=key;page.removeAllViews();adapter=null;selectedCard=null;resultCount=null;voiceStatusText=null;updateStatusText=null;updateProgressView=null
+        metricsSection.visibility=if(key=="home")View.VISIBLE else View.GONE
+        val names=mapOf("home" to Pair("Visão geral","Tudo o que importa, em um só lugar."),"processes" to Pair("Aplicativos","Processos agrupados • memória total por aplicativo."),"power" to Pair("Energia","Controle e agendamentos do computador."),"settings" to Pair("Configurações","Conexão, atualizações e preferências."),"history" to Pair("Histórico","Atividade recente do agente."))
         title.text=names[key]?.first?:"AURA";subtitle.text=names[key]?.second?:""
+        settingsAction.setImageDrawable(AuraIcon("settings",if(key in listOf("settings","history"))AuraTheme.teal else AuraTheme.muted))
         navButtons.forEach{(name,item)->val active=name==key || (key=="history" && name=="settings");val color=if(active)AuraTheme.teal else AuraTheme.muted
-            (item.getChildAt(0) as ImageView).setImageDrawable(AuraIcon(if(name=="settings")"settings" else name,color));(item.getChildAt(1) as TextView).setTextColor(color);item.isSelected=active}
+            (item.getChildAt(0) as ImageView).setImageDrawable(AuraIcon(if(name=="settings")"settings" else name,color));(item.getChildAt(1) as TextView).setTextColor(color);item.isSelected=active
+            item.background=RippleDrawable(ColorStateList.valueOf(0x226DDCCF),AuraTheme.surface(this,if(active)AuraTheme.selected else AuraTheme.panel,18,if(active)AuraTheme.selected else AuraTheme.panel),null)}
         if(key=="processes"){buildProcesses();if(load && profile!=null)processes();return}
         val scroll=ScrollView(this).apply{isFillViewport=true;clipToPadding=false}
         val body=vertical();scroll.addView(body);page.addView(scroll,LinearLayout.LayoutParams(-1,-1))
         when(key){
             "home"->{
                 val c=card(body);c.addView(text("SEU COMPUTADOR",11f,AuraTheme.muted));gap(c,10)
+                (metricsSection.parent as? ViewGroup)?.removeView(metricsSection);body.addView(metricsSection,0)
                 c.addView(text(profile?.optString("name")?:"Conecte seu PC",21f,bold=true));gap(c,8)
                 c.addView(text(modeDescription(),13f,AuraTheme.muted))
                 actionButton(c,"Atualizar estado","refresh",accent=true){refresh()}
                 actionButton(c,"Ligar PC • Wake-on-LAN","power"){wake()}
-                val voice=card(body);voice.addView(text("Controle por voz • Ok Aura",18f,bold=true))
+                val voice=card(body);voice.addView(text("ASSISTENTE AURA",11f,AuraTheme.teal,true));gap(voice,6);voice.addView(text("Diga “Ok Aura”.",23f,bold=true))
+                body.removeView(voice);body.addView(voice,0)
                 voiceStatusText=text(VoiceInbox.message,13f,AuraTheme.muted);voice.addView(voiceStatusText)
                 voiceStatusText?.setOnClickListener{ensureVoice(true)}
                 voice.addView(VoiceMeterView(this),LinearLayout.LayoutParams(-1,dp(72)))
-                voice.addView(text("Diga “Ok Aura”, aguarde o sinal e fale: “encerrar Discord”, “desligar em trinta minutos” ou “ligar o PC”.",13f))
-                voice.addView(text("A escuta é local. Em segundo plano, toque na notificação para conferir o comando. Ações de energia e encerramento pedem confirmação.",12f,AuraTheme.muted))
+                voice.addView(text("Experimente “desligue o Windows” ou “encerrar Chrome”.",13f))
+                voice.addView(text("Escuta local • ações de energia e encerramento pedem confirmação.",12f,AuraTheme.muted))
                 val schedule=card(body);schedule.addView(text("PRÓXIMO AGENDAMENTO",11f,AuraTheme.muted));gap(schedule,10);schedule.addView(text(scheduleDescription(),14f))
                 actionButton(schedule,"Ver energia e agendamentos","calendar"){showPage("power")}
-                actionButton(body,"Conectar PC","connection"){importProfile()}
-                actionButton(body,"Histórico de atividade","history"){showPage("history")}
             }
             "power"->{
                 val c=card(body);c.addView(text("Energia do computador",18f,bold=true));gap(c,8);c.addView(text(modeDescription(),13f,AuraTheme.muted))
@@ -253,8 +265,14 @@ class MainActivity : Activity() {
                 val hint=card(body);hint.addView(text("Conexão privada",16f,bold=true));gap(hint,8);hint.addView(text("Gere o código no Windows e cole aqui. O celular e o PC precisam se alcançar pela rede local. O modo real ou simulação é alterado no Windows.",13f,AuraTheme.muted))
                 actionButton(body,"Histórico de atividade","history"){showPage("history")}
                 val updates=card(body);updates.addView(text("Atualizações • AURA ${AuraVersion.name}",16f,bold=true));gap(updates,8)
-                updates.addView(text(updateMessage,12f,AuraTheme.muted))
-                actionButton(updates,"Verificar atualizações","refresh"){checkUpdates(true)}
+                body.removeView(updates);body.addView(updates,0)
+                updateStatusText=text(updateMessage,13f,AuraTheme.muted);updates.addView(updateStatusText)
+                if(checkingUpdates || downloadingUpdate){
+                    updateProgressView=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;isIndeterminate=updatePercent<0;progress=updatePercent.coerceAtLeast(0);progressTintList=ColorStateList.valueOf(AuraTheme.teal);indeterminateTintList=ColorStateList.valueOf(AuraTheme.teal)}
+                    updates.addView(updateProgressView,LinearLayout.LayoutParams(-1,dp(6)).apply{topMargin=dp(16);bottomMargin=dp(10)})
+                }
+                availableUpdate?.takeIf{it.available}?.let{result->actionButton(updates,"Atualizar para ${result.version}","refresh",accent=true){downloadUpdate(result)}.isEnabled=!checkingUpdates && !downloadingUpdate}
+                actionButton(updates,if(checkingUpdates)"Consultando…" else "Verificar agora","refresh"){checkUpdates(true)}.isEnabled=!checkingUpdates && !downloadingUpdate
                 if(UpdateInstaller.pending(this)!=null)actionButton(updates,"Instalar atualização baixada","refresh"){installDownloadedUpdate()}
                 gap(body,14);body.addView(text("AURA ${AuraVersion.name}",11f,AuraTheme.muted))
             }
@@ -327,9 +345,9 @@ class MainActivity : Activity() {
             "terminate"->work{
                 val data=JSONArray(api("processes"))
                 val rows=(0 until data.length()).map{data.getJSONObject(it)}
-                val matches=if(VoiceCommands.selectedReference(value.argument))rows.filter{selected?.let{s->sameProcess(it,s)}?:false}else VoiceCommands.candidates(rows,value)
+                val matches=ProcessGroups.group(if(VoiceCommands.selectedReference(value.argument))rows.filter{selected?.let{s->sameProcess(it,s)}?:false}else VoiceCommands.candidates(rows,value))
                 safeUi{
-                    fun choose(row:JSONObject){confirm("Encerrar ${row.getString("name")} (PID ${row.getInt("pid")})? Alterações não salvas podem ser perdidas."){command("processes/terminate",JSONObject().put("pid",row.getInt("pid")).put("name",row.getString("name")).put("created_at",row.getDouble("created_at")))}}
+                    fun choose(row:JSONObject){confirmGroup(row)}
                     if(matches.size==1)choose(matches[0])
                     else if(matches.isNotEmpty())AlertDialog.Builder(this).setTitle("Selecione o processo").setItems(matches.map{"${it.getString("name")} • PID ${it.getInt("pid")}"}.toTypedArray()){_,index->choose(matches[index])}.setNegativeButton("Cancelar",null).show()
                     else VoiceInbox.message=if(VoiceCommands.selectedReference(value.argument))"Selecione o aplicativo na aba Processos e repita o comando." else "Não identifiquei o programa. Confira os nomes na aba Processos e repita."
@@ -341,34 +359,47 @@ class MainActivity : Activity() {
     private fun checkUpdates(manual:Boolean){
         if(checkingUpdates || downloadingUpdate || isDestroyed || startupFailed)return
         checkingUpdates=true
-        if(manual){updateMessage="Consultando o GitHub…";if(currentPage=="settings")showPage("settings",false)}
+        updateMessage="Consultando a versão publicada no GitHub…";updatePercent=-1
+        if(currentPage=="settings")showPage("settings",false)
         updateExecutor.execute {
             try {
                 val result=UpdateClient.check()
                 safeUi {
-                    updateMessage=if(result.available)"Nova versão disponível: ${result.version}" else "Você está na versão mais recente publicada."
+                    checkingUpdates=false;availableUpdate=result.takeIf{it.available}
+                    val stamp=java.text.SimpleDateFormat("HH:mm",java.util.Locale.getDefault()).format(java.util.Date())
+                    updateMessage=(if(result.available)"Nova versão disponível: ${result.version}" else "Você está na versão mais recente publicada.")+" • Verificado às $stamp"
                     if(currentPage=="settings")showPage("settings",false)
-                    if(result.available && (manual || lastNotifiedBuild!=result.build)){
+                    if(result.available && updateForeground && (manual || lastNotifiedBuild!=result.build)){
                         lastNotifiedBuild=result.build
                         AlertDialog.Builder(this).setTitle("Atualização disponível").setMessage("AURA ${result.version} está pronta. A AURA vai baixar e verificar o APK. Depois, basta confirmar a instalação no Android.")
                             .setNegativeButton("Depois",null).setPositiveButton("Atualizar agora"){_,_->downloadUpdate(result)}.show()
                     }
                 }
             } catch(error:Exception){safeUi{
+                checkingUpdates=false
                 updateMessage=when(error){is IllegalStateException,is IllegalArgumentException->error.message?:"Release inválida.";else->"Sem acesso ao GitHub. Tente novamente mais tarde."}
                 if(currentPage=="settings")showPage("settings",false)
-            }} finally {safeUi{checkingUpdates=false}}
+            }}
         }
     }
     private fun downloadUpdate(result:UpdateClient.Result){
         if(downloadingUpdate)return
-        downloadingUpdate=true;updateMessage="Baixando e verificando a atualização…";status.text=updateMessage
+        downloadingUpdate=true;updatePercent=-1;updateMessage="Baixando e verificando a atualização…";status.text=updateMessage
         if(currentPage=="settings")showPage("settings",false)
         updateExecutor.execute{
             try{
-                UpdateInstaller.download(this,result)
+                var lastProgress=0L
+                UpdateInstaller.download(this,result){done,total->
+                    val now=android.os.SystemClock.elapsedRealtime()
+                    if(now-lastProgress>=150 || done==total){lastProgress=now;safeUi{
+                        updatePercent=if(total>0)(done*100/total).toInt().coerceAtMost(99)else -1
+                        updateMessage=if(updatePercent>=0)"Baixando atualização • $updatePercent%" else "Baixando atualização • ${done/1048576} MB"
+                        updateStatusText?.text=updateMessage;updateProgressView?.let{it.isIndeterminate=updatePercent<0;it.progress=updatePercent.coerceAtLeast(0)};status.text=updateMessage
+                    }}
+                }
                 safeUi{
-                    downloadingUpdate=false;updateMessage="Atualização verificada. Confirme a instalação."
+                    downloadingUpdate=false;updatePercent=100;updateMessage="Atualização verificada. Confirme a instalação."
+                    status.text=updateMessage;if(currentPage=="settings")showPage("settings",false)
                     if(updateForeground)installDownloadedUpdate()
                     else getSharedPreferences("aura",MODE_PRIVATE).edit().putBoolean("resume_download_install",true).apply()
                 }
@@ -455,8 +486,8 @@ class MainActivity : Activity() {
         page.addView(search,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(12)})
         val columns=horizontal().apply{setPadding(dp(12),dp(10),dp(12),dp(10));background=AuraTheme.surface(this@MainActivity,AuraTheme.panel,8)}
         columns.addView(text("Aplicativo",11f,AuraTheme.muted),LinearLayout.LayoutParams(0,-2,1f))
-        columns.addView(text("PID",11f,AuraTheme.muted),LinearLayout.LayoutParams(dp(52),-2))
-        columns.addView(text("Memória",11f,AuraTheme.muted),LinearLayout.LayoutParams(dp(74),-2));page.addView(columns)
+        columns.addView(text("Qtd.",11f,AuraTheme.muted),LinearLayout.LayoutParams(dp(42),-2))
+        columns.addView(text("Memória total",11f,AuraTheme.muted),LinearLayout.LayoutParams(dp(86),-2));page.addView(columns)
         val list=ListView(this).apply{divider=android.graphics.drawable.ColorDrawable(AuraTheme.line);dividerHeight=dp(1);setPadding(0,0,0,0);clipToPadding=false;setCacheColorHint(Color.TRANSPARENT)}
         adapter=ProcessAdapter();list.adapter=adapter;page.addView(list,LinearLayout.LayoutParams(-1,0,1f))
         val empty=text("Atualize para carregar os aplicativos.",13f,AuraTheme.muted).apply{gravity=Gravity.CENTER;setPadding(dp(12),dp(24),dp(12),dp(24))}
@@ -469,21 +500,39 @@ class MainActivity : Activity() {
         filterRows()
     }
     private fun filterRows(){
-        val term=query.trim();filteredRows=allRows.filter{it.getString("name").contains(term,true) || it.getInt("pid").toString().contains(term)}
+        val term=query.trim();filteredRows=allRows.filter{ProcessGroups.contains(it,term)}
         if(selected!=null && filteredRows.none{sameProcess(it,selected!!)})selected=null
-        adapter?.notifyDataSetChanged();resultCount?.text="${filteredRows.size} de ${allRows.size} processos elegíveis • maior memória primeiro";updateSelectedCard()
+        adapter?.notifyDataSetChanged();resultCount?.text="${filteredRows.size} aplicativos • ${filteredRows.sumOf{ProcessGroups.members(it).size}} processos • maior memória primeiro";updateSelectedCard()
+        if(processListLimited)resultCount?.append("\nO agente anterior limita a lista. Atualize o componente administrador nas Configurações do Windows.")
     }
-    private fun sameProcess(a:JSONObject,b:JSONObject)=a.getInt("pid")==b.getInt("pid") && a.getDouble("created_at")==b.getDouble("created_at")
+    private fun sameProcess(a:JSONObject,b:JSONObject)=ProcessGroups.key(a)==ProcessGroups.key(b)
     private fun updateSelectedCard(){
         val c=selectedCard?:return;c.removeAllViews();val r=selected;c.visibility=if(r==null)View.GONE else View.VISIBLE
-        if(r!=null){c.addView(text(r.getString("name")+" • PID "+r.getInt("pid"),12f,bold=true));actionButton(c,"Encerrar processo","trash",danger=true){confirm("Encerrar ${r.getString("name")} (PID ${r.getInt("pid")})? Alterações não salvas podem ser perdidas."){command("processes/terminate",JSONObject().put("pid",r.getInt("pid")).put("name",r.getString("name")).put("created_at",r.getDouble("created_at")))}}}
+        if(r!=null){
+            c.addView(text(r.getString("name")+" • ${ProcessGroups.members(r).size} processos • ${java.text.DecimalFormat("0.#").format(r.getDouble("ram_mb"))} MB",12f,bold=true))
+            val actions=horizontal();c.addView(actions)
+            actionButton(actions,"Detalhes"){AlertDialog.Builder(this).setTitle(r.getString("name")).setItems(ProcessGroups.members(r).map{"PID ${it.getInt("pid")} • ${java.text.DecimalFormat("0.#").format(it.getDouble("ram_mb"))} MB • ${it.getString("name")}"}.toTypedArray(),null).setPositiveButton("Fechar",null).show()}.layoutParams=LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(6)}
+            actionButton(actions,"Encerrar app","trash",danger=true){confirmGroup(r)}.layoutParams=LinearLayout.LayoutParams(0,-2,1f).apply{leftMargin=dp(6)}
+        }
+    }
+    private fun confirmGroup(row:JSONObject){
+        val members=ProcessGroups.members(row).toList()
+        confirm("Encerrar ${row.getString("name")} e seus ${members.size} processos listados?\nPIDs: ${members.joinToString{it.getInt("pid").toString()}}\nAlterações não salvas podem ser perdidas."){
+            work{
+                var sent=0;var failed=0;var simulation=true
+                for(member in members.asReversed())try{val response=JSONObject(api("processes/terminate",ProcessGroups.payload(member)));simulation=simulation && response.optString("message").startsWith("SIMULAÇÃO:");sent++}catch(_:Exception){failed++}
+                val data=JSONArray(api("processes"));safeUi{acceptProcesses(data)}
+                (if(simulation && sent>0)"Simulação: " else "")+"$sent de ${members.size} solicitações concluídas."+(if(failed>0)" Alguns processos já encerraram ou não puderam ser alterados."else "")
+            }
+        }
     }
     private fun processes(){work{
         val data=JSONArray(api("processes"));val s=JSONObject(api("status"));safeUi{updateStatus(s);acceptProcesses(data)}
-        if(data.length()==0)"Nenhum processo elegível para encerramento." else "Lista atualizada. Selecione pelo nome e PID."
+        if(data.length()==0)"Nenhum processo elegível para encerramento." else "Aplicativos agrupados. Confira os detalhes antes de encerrar."
     }}
     private fun acceptProcesses(data:JSONArray){
-        allRows=(0 until data.length()).map{data.getJSONObject(it)};selected=selected?.let{old->allRows.firstOrNull{sameProcess(it,old)}};filterRows()
+        processListLimited=(lastStatus?.optInt("build",0)?:0)<407 && data.length()==150
+        allRows=ProcessGroups.group((0 until data.length()).map{data.getJSONObject(it)});selected=selected?.let{old->allRows.firstOrNull{sameProcess(it,old)}};filterRows()
         val current=++generation;val p=profile?:return
         val keys=(filteredRows+allRows).mapNotNull{if(it.isNull("icon_id"))null else it.optString("icon_id").takeIf{key->key.matches(Regex("[0-9a-f]{64}"))}}
             .distinct().filter{icons.get(it)==null}
@@ -513,13 +562,13 @@ class MainActivity : Activity() {
         override fun getItemId(position:Int)=getItem(position).getInt("pid").toLong()
         override fun getView(position:Int,convertView:View?,parent:ViewGroup):View{
             val row=getItem(position);val active=selected?.let{sameProcess(row,it)}?:false
-            val view=horizontal().apply{minimumHeight=dp(68);setPadding(dp(12),dp(12),dp(8),dp(12));setBackgroundColor(if(active)AuraTheme.selected else AuraTheme.bg);contentDescription="${row.getString("name")}, PID ${row.getInt("pid")}, ${row.getDouble("ram_mb")} megabytes"}
+            val view=horizontal().apply{minimumHeight=dp(76);setPadding(dp(12),dp(14),dp(8),dp(14));setBackgroundColor(if(active)AuraTheme.selected else AuraTheme.panel);contentDescription="${row.getString("name")}, ${ProcessGroups.members(row).size} processos, ${row.getDouble("ram_mb")} megabytes no total"}
             val id=if(row.isNull("icon_id"))"" else row.optString("icon_id");val bitmap=icons.get(id)
             if(bitmap!=null)view.addView(ImageView(this@MainActivity).apply{setImageBitmap(bitmap);importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO},LinearLayout.LayoutParams(dp(34),dp(34)).apply{rightMargin=dp(10)})
             else view.addView(text(row.getString("name").take(1).uppercase(),17f,AuraTheme.muted,true).apply{gravity=Gravity.CENTER;background=AuraTheme.surface(this@MainActivity,Color.rgb(38,55,70),8)},LinearLayout.LayoutParams(dp(34),dp(34)).apply{rightMargin=dp(10)})
-            view.addView(text(row.getString("name"),13f).apply{maxLines=2;ellipsize=TextUtils.TruncateAt.END},LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(6)})
-            view.addView(text(row.getInt("pid").toString(),11f,AuraTheme.muted),LinearLayout.LayoutParams(dp(52),-2))
-            view.addView(text(java.text.DecimalFormat("0.#").format(row.getDouble("ram_mb"))+" MB",11f,AuraTheme.muted),LinearLayout.LayoutParams(dp(74),-2))
+            val copy=vertical();copy.addView(text(row.getString("name").removeSuffix(".exe"),14f,bold=true).apply{maxLines=1;ellipsize=TextUtils.TruncateAt.END});copy.addView(text(row.getString("name"),10f,AuraTheme.muted).apply{maxLines=1;ellipsize=TextUtils.TruncateAt.END});view.addView(copy,LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(6)})
+            view.addView(text(ProcessGroups.members(row).size.toString(),12f,AuraTheme.teal),LinearLayout.LayoutParams(dp(42),-2))
+            view.addView(text(java.text.DecimalFormat("0.#").format(row.getDouble("ram_mb"))+" MB",12f,AuraTheme.text),LinearLayout.LayoutParams(dp(86),-2))
             return view
         }
     }

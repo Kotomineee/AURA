@@ -37,7 +37,7 @@ object UpdateInstaller {
         val installed=signatures(current);val incoming=signatures(archive)
         require(installed.isNotEmpty() && incoming==installed){"O APK tem outra assinatura e não pode atualizar sua instalação."}
     }
-    fun download(context:Context,result:UpdateClient.Result):File {
+    fun download(context:Context,result:UpdateClient.Result,progress:((Long,Long)->Unit)?=null):File {
         require(result.available && result.build>AuraVersion.build)
         require(result.url.startsWith("https://github.com/${UpdateClient.repository}/releases/download/"))
         val target=file(context);target.parentFile!!.mkdirs()
@@ -48,10 +48,13 @@ object UpdateInstaller {
         try {
             require(connection.responseCode in 200..299 && connection.url.protocol=="https"){"Não foi possível baixar a atualização."}
             var size=0L
+            val total=connection.contentLengthLong
+            require(total<=150L*1024*1024){"APK excedeu o limite de tamanho."}
             connection.inputStream.use{stream->partial.outputStream().use{output->
                 val buffer=ByteArray(65536)
-                while(true){if(Thread.currentThread().isInterrupted)throw java.io.InterruptedIOException();val count=stream.read(buffer);if(count<0)break;size+=count;require(size<=150L*1024*1024){"APK excedeu o limite de tamanho."};output.write(buffer,0,count)}
+                while(true){if(Thread.currentThread().isInterrupted)throw java.io.InterruptedIOException();val count=stream.read(buffer);if(count<0)break;size+=count;require(size<=150L*1024*1024){"APK excedeu o limite de tamanho."};output.write(buffer,0,count);progress?.invoke(size,total)}
             }}
+            require(total<=0 || size==total){"O download ficou incompleto. Tente novamente."}
             verifyPackage(context,partial,result)
             java.nio.file.Files.move(partial.toPath(),target.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING)
             val metadata=org.json.JSONObject().put("version",result.version).put("build",result.build).put("sha256",result.sha256).put("url",result.url)

@@ -37,7 +37,7 @@ class StartupTest {
     @Test fun navigationAndActivityRecreation() {
         val controller=Robolectric.buildActivity(MainActivity::class.java).setup()
         try {
-            for(destination in listOf("Processos","Energia","Ajustes","Início")) {
+            for(destination in listOf("Aplicativos","Energia","Configurações","Início")) {
                 val root=controller.get().window.decorView
                 val nav=descendants(root).first{it.contentDescription?.toString()==destination}
                 assertTrue(nav.performClick())

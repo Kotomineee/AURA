@@ -13,15 +13,21 @@ object AuraVersion {
 object UpdateClient {
     const val repository = "Kotomineee/AURA"
     data class Result(val available:Boolean,val version:String,val build:Int,val url:String,val sha256:String)
+    private val cache=linkedMapOf<String,Pair<String,String>>()
 
-    private fun json(url:String):JSONObject {
+    @Synchronized internal fun json(url:String,open:(String)->HttpsURLConnection={URL(it).openConnection() as HttpsURLConnection}):JSONObject {
         require(url.startsWith("https://"))
-        val connection=URL(url).openConnection() as HttpsURLConnection
+        val connection=open(url)
         connection.connectTimeout=10000;connection.readTimeout=12000
         connection.setRequestProperty("User-Agent","AURA-update-check")
         connection.setRequestProperty("Accept","application/json")
+        connection.setRequestProperty("Cache-Control","no-cache")
+        val cached=cache[url]
+        if(cached!=null)connection.setRequestProperty("If-None-Match",cached.first)
         try {
             val code=connection.responseCode
+            require(connection.url.protocol=="https")
+            if(code==304){require(cached!=null){"Resposta de atualização incompleta. Tente novamente."};return JSONObject(cached.second)}
             if(code==404)throw IllegalStateException("Repositório privado, inexistente ou sem Release pública.")
             if(code==403 || code==429)throw IllegalStateException("Limite de consultas do GitHub atingido. Tente mais tarde.")
             require(code in 200..299){"Não foi possível consultar a atualização."}
@@ -31,7 +37,13 @@ object UpdateClient {
                 val buffer=ByteArray(4096)
                 while(true){val count=stream.read(buffer);if(count<0)break;require(output.size()+count<=262144);output.write(buffer,0,count)}
             }
-            return JSONObject(output.toString("UTF-8"))
+            val raw=output.toString("UTF-8");val value=JSONObject(raw)
+            val etag=connection.getHeaderField("ETag")
+            if(!etag.isNullOrBlank() && etag.length<256 && etag.none{it.code<32}){
+                cache.remove(url);cache[url]=etag to raw
+                while(cache.size>8)cache.remove(cache.keys.first())
+            }
+            return value
         } finally {connection.disconnect()}
     }
 

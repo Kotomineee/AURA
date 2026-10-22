@@ -9,16 +9,16 @@ import org.json.JSONObject
 
 /** Shared charcoal surfaces and teal accents from the approved 0.4.1 reference. */
 object AuraTheme {
-    val bg = Color.rgb(14,16,33)
-    val panel = Color.rgb(25,29,53)
-    val line = Color.rgb(51,58,90)
-    val text = Color.rgb(243,242,255)
-    val muted = Color.rgb(177,184,210)
-    val teal = Color.rgb(166,155,255)
-    val selected = Color.rgb(48,49,84)
-    val red = Color.rgb(255,143,168)
+    val bg = Color.rgb(11,16,23)
+    val panel = Color.rgb(18,29,41)
+    val line = Color.rgb(36,54,72)
+    val text = Color.rgb(237,244,255)
+    val muted = Color.rgb(155,175,197)
+    val teal = Color.rgb(109,220,207)
+    val selected = Color.rgb(23,59,66)
+    val red = Color.rgb(255,147,166)
     fun dp(context: Context, value: Int) = (value * context.resources.displayMetrics.density + .5f).toInt()
-    fun surface(context: Context, fill: Int = panel, radius: Int = 18, stroke: Int = line) = GradientDrawable().apply {
+    fun surface(context: Context, fill: Int = panel, radius: Int = 22, stroke: Int = line) = GradientDrawable().apply {
         setColor(fill); cornerRadius = dp(context,radius).toFloat(); setStroke(dp(context,1),stroke)
     }
 }

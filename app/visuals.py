@@ -1,15 +1,15 @@
 """AURA's charcoal/teal design primitives, drawn locally without font icons."""
 import tkinter as tk
 
-BG = '#0E1021'
-PANEL = '#191D35'
-SIDEBAR = '#12152B'
-LINE = '#333A5A'
-TEXT = '#F3F2FF'
-MUTED = '#B1B8D2'
-TEAL = '#A69BFF'
-SELECT = '#303154'
-RED = '#FF8FA8'
+BG = '#0B1017'
+PANEL = '#121D29'
+SIDEBAR = '#0E1823'
+LINE = '#243648'
+TEXT = '#EDF4FF'
+MUTED = '#9BAFC5'
+TEAL = '#6DDCCF'
+SELECT = '#173B42'
+RED = '#FF93A6'
 
 
 class VoiceMeter(tk.Canvas):
@@ -71,7 +71,7 @@ def icon(c, kind, x, y, size=24, color=MUTED):
         oval(2,2,17,17); line(15,15,22,22)
     elif kind == 'trash':
         line(3,6,21,6); box(6,6,18,22); line(9,6,9,2,15,2,15,6); line(10,10,10,18); line(14,10,14,18)
-    elif kind == 'refresh':
+    elif kind in ('refresh','updates'):
         c.create_arc(x+3*s,y+3*s,x+21*s,y+21*s,start=40,extent=285,style='arc',outline=color,width=1.6*s)
         line(21,2,21,8,15,8)
     elif kind == 'history':
@@ -108,13 +108,13 @@ class Button(tk.Canvas):
     def draw(self, _=None):
         self.delete('all'); w, h = self.winfo_width(), self.winfo_height()
         color = TEAL if self.accent else RED if self.danger else TEXT
-        fill = '#23414A' if self.hover else SELECT if self.active else '#38232D' if self.danger else PANEL
+        fill = '#1E3A43' if self.hover else SELECT if self.active else '#38232D' if self.danger else PANEL
         if self.nav and not self.active and not self.hover:
             fill = self.cget('bg'); color = MUTED
         if not self.enabled:
             color = '#647686'
         border = TEAL if self.focus_get() == self else '#78404B' if self.danger else LINE
-        rounded(self, 1,1,w-1,h-1,8,fill=fill,outline=border if not self.nav or self.active else fill)
+        rounded(self, 1,1,w-1,h-1,14,fill=fill,outline=border if not self.nav or self.active else fill)
         if self.active and self.nav:
             self.create_line(2,8,2,h-8,fill=TEAL,width=3)
             color = TEAL

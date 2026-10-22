@@ -58,7 +58,7 @@ def run():
             extracted = process_icons._extract(sys.executable)
             assert extracted, 'The packaged executable must expose its actual icon'
             assert Image.open(io.BytesIO(base64.b64decode(extracted))).size == (32,32)
-            assert VERSION == '0.1.4' and BUILD == 406
+            assert VERSION == '0.1.5' and BUILD == 407
             import sounddevice  # Import only: never open an input device here.
             from vosk import Model, KaldiRecognizer, SetLogLevel
             from . import voice, admin

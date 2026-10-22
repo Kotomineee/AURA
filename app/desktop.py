@@ -17,6 +17,7 @@ import urllib.request
 import uuid
 from .native_runtime import PORT, identity, pairing
 from .version import VERSION, BUILD
+from . import process_groups
 
 
 def main():
@@ -60,6 +61,7 @@ def main():
     icon_pool=ThreadPoolExecutor(max_workers=2,thread_name_prefix='aura-icons-client')
     events=queue.Queue(); pending=set(); closed=False; connected=False
     rows=[]; visible=[]; selected=None; generation=0; images=OrderedDict(); redraw_scheduled=False
+    agent_build=0;process_list_limited=False
     banner=tk.StringVar(value='Inicie o agente na Visão geral para conectar seu computador.')
     connection_text=tk.StringVar(value='PC desconectado'); hostname=tk.StringVar(value='Aguardando conexão')
     mode_text=tk.StringVar(value='Estado ainda não consultado')
@@ -108,7 +110,8 @@ def main():
 
     sidebar=tk.Frame(root,bg=SIDEBAR,width=234,highlightthickness=1,highlightbackground=LINE)
     sidebar.pack(side='left',fill='y'); sidebar.pack_propagate(False)
-    label(sidebar,'A U R A',29).pack(anchor='w',padx=28,pady=(34,36))
+    label(sidebar,'AURA',30,bold=True).pack(anchor='w',padx=28,pady=(30,4))
+    label(sidebar,'SEU ESPAÇO DE CONTROLE',8,MUTED).pack(anchor='w',padx=28,pady=(0,26))
     nav_buttons={}
     main_area=tk.Frame(root,bg=BG,padx=30,pady=26); main_area.pack(side='left',fill='both',expand=True)
     title=tk.StringVar(); subtitle=tk.StringVar()
@@ -121,7 +124,7 @@ def main():
     page_area=tk.Frame(main_area,bg=BG); page_area.pack(fill='both',expand=True)
     page_area.columnconfigure(0,weight=1); page_area.rowconfigure(0,weight=1)
     pages={}; page_hosts={}; scrollable={}; current_page='home'
-    for key in ('home','processes','power','calendar','connection','history'):
+    for key in ('home','processes','power','calendar','connection','updates','history'):
         host=tk.Frame(page_area,bg=BG); host.grid(row=0,column=0,sticky='nsew'); page_hosts[key]=host
         if key in ('processes','history'):
             pages[key]=host
@@ -137,19 +140,22 @@ def main():
     statusbar=label(main_area,variable=banner,size=10,color=MUTED); statusbar.pack(fill='x',pady=(12,0))
     statusbar.bind('<Configure>',lambda e:statusbar.configure(wraplength=max(200,e.width)))
     page_names={'home':('Visão geral','Seu computador, conectado a você.'),
-        'processes':('Processos','Veja e gerencie os aplicativos do seu computador.'),
+        'processes':('Aplicativos','Processos agrupados e memória total por aplicativo.'),
         'power':('Energia','Controle o computador com clareza e segurança.'),
         'calendar':('Agendamentos','Escolha quando encerrar o dia.'),
-        'connection':('Conexão','Conecte seu Android ao computador pela rede local.'),
+        'connection':('Configurações','Conexão com o celular e preferências do Windows.'),
+        'updates':('Atualizações','Sua AURA sempre em dia.'),
         'history':('Histórico','Acompanhe as ações registradas pelo agente.')}
     def navigate(key):
         nonlocal current_page
         current_page=key
         page_hosts[key].tkraise(); title.set(page_names[key][0]); subtitle.set(page_names[key][1])
+        metric_row.pack_forget()
+        if key in ('home','power'):metric_row.pack(fill='x',pady=(0,16),before=page_area)
         for name,button in nav_buttons.items():button.active=name==key; button.draw()
         if key=='processes' and connected:refresh_processes()
         elif key=='history' and connected:refresh_logs()
-    for key in ('home','processes','power','calendar','connection'):
+    for key in ('home','processes','power','calendar','updates','history','connection'):
         button=Button(sidebar,page_names[key][0],lambda k=key:navigate(k),kind=key,nav=True)
         button.pack(fill='x',padx=12,pady=5); nav_buttons[key]=button
     foot=tk.Frame(sidebar,bg=SIDEBAR); foot.pack(side='bottom',fill='x',padx=22,pady=24)
@@ -161,7 +167,8 @@ def main():
     host_label.configure(wraplength=148); host_label.pack(anchor='w',pady=(4,0))
 
     def show_status(data):
-        nonlocal connected
+        nonlocal connected,agent_build
+        agent_build=data.get('build',0)
         connected=True; connection_text.set('PC conectado'); hostname.set(data['hostname']); status_dot.configure(fg='#37DA8B')
         mode_text.set('Simulação ativa • nenhuma ação de energia será executada' if data['dry_run'] else 'Modo real ativo • ações enviadas ao Windows')
         for metric in metrics:metric.update_value(data)
@@ -206,18 +213,20 @@ def main():
             else:task('status',lambda:api('status'),lambda s:(show_status(s),banner.set(data['message'])),quiet=True)
         task('action',lambda:api(path,body),complete)
 
-    state=card(pages['home']); state.pack(fill='x',pady=(2,14))
+    home_dashboard=tk.Frame(pages['home'],bg=BG);home_dashboard.pack(fill='x',pady=(0,16))
+    home_dashboard.columnconfigure((0,1),weight=1,uniform='dashboard')
+    state=card(home_dashboard); state.grid(row=0,column=0,sticky='nsew',padx=(0,8))
     label(state,'SEU COMPUTADOR',10,MUTED).pack(anchor='w')
-    label(state,variable=hostname,size=20,bold=True).pack(anchor='w',pady=(8,4))
-    label(state,variable=mode_text,size=10,color=MUTED).pack(anchor='w')
+    home_host=label(state,variable=hostname,size=20,bold=True);home_host.configure(wraplength=320);home_host.pack(anchor='w',pady=(8,4))
+    home_mode=label(state,variable=mode_text,size=10,color=MUTED);home_mode.configure(wraplength=320);home_mode.pack(anchor='w')
     row=tk.Frame(state,bg=PANEL); row.pack(fill='x',pady=(18,0))
-    Button(row,'Iniciar / conectar agente',start_agent,kind='connection',accent=True).pack(side='left',fill='x',expand=True,padx=(0,10))
-    Button(row,'Atualizar estado',refresh,kind='refresh').pack(side='left',fill='x',expand=True)
-    next_card=card(pages['home']); next_card.pack(fill='x',pady=(0,14))
+    Button(row,'Conectar',start_agent,kind='connection',accent=True,width=140).pack(side='left',fill='x',expand=True,padx=(0,10))
+    Button(row,'Atualizar',refresh,kind='refresh',width=140).pack(side='left',fill='x',expand=True)
+    next_card=card(home_dashboard); next_card.grid(row=0,column=1,sticky='nsew',padx=(8,0))
     label(next_card,'PRÓXIMO AGENDAMENTO',10,MUTED).pack(anchor='w')
-    label(next_card,variable=schedule_text,size=13).pack(anchor='w',pady=(10,14))
+    home_schedule=label(next_card,variable=schedule_text,size=13);home_schedule.configure(wraplength=320);home_schedule.pack(anchor='w',pady=(10,14))
     Button(next_card,'Ver agendamentos',lambda:navigate('calendar'),kind='calendar').pack(fill='x')
-    Button(pages['home'],'Histórico de atividade',lambda:navigate('history'),kind='history').pack(fill='x')
+    Button(pages['home'],'Abrir aplicativos em execução',lambda:navigate('processes'),kind='processes').pack(fill='x')
     from . import preferences, updates, autostart
     prefs = preferences.read()
     startup_enabled = tk.BooleanVar(value=prefs.get('autostart', True))
@@ -268,8 +277,9 @@ def main():
     from .voice_commands import candidates,selected_reference
     from .visuals import VoiceMeter
     listener=None
-    voice_card=card(pages['home']); voice_card.pack(fill='x',pady=(14,0))
-    label(voice_card,'Controle por voz • Ok Aura',16,bold=True).pack(anchor='w')
+    voice_card=card(pages['home']); voice_card.pack(fill='x',pady=(0,16),before=home_dashboard)
+    label(voice_card,'ASSISTENTE AURA',10,MUTED).pack(anchor='w')
+    label(voice_card,'Diga “Ok Aura”.',24,bold=True).pack(anchor='w',pady=(8,0))
     voice_text=tk.StringVar(value='Preparando escuta automática • reconhecimento local.')
     voice_label=label(voice_card,variable=voice_text,size=10,color=MUTED); voice_label.configure(wraplength=670); voice_label.pack(fill='x',pady=8)
     voice_meter=VoiceMeter(voice_card);voice_meter.pack(fill='x',pady=(4,12))
@@ -303,10 +313,10 @@ def main():
                 def choose(data):
                     nonlocal selected
                     if selected_reference(argument):
-                        matches=[r for r in data if selected and r['pid']==selected['pid'] and r['created_at']==selected['created_at']]
+                        matches=[r for r in process_groups.group(data) if selected and process_groups.key(r)==process_groups.key(selected)]
                         if not matches:
                             navigate('processes');display_processes(data);voice_text.set('Selecione o aplicativo na aba Processos e repita o comando.');return
-                    else:matches=candidates(data,argument)
+                    else:matches=process_groups.group(candidates(data,argument))
                     if len(matches)==1:
                         selected=matches[0]; terminate()
                     elif matches:
@@ -320,25 +330,35 @@ def main():
         voice_text.set('Preparando reconhecimento local…')
         listener=Listener(lambda event:events.put(('voice-event',receive_voice,event,None,True)))
         listener.start()
-    update_card = card(pages['home']); update_card.pack(fill='x',pady=(14,0))
+    update_card = card(pages['updates']); update_card.pack(fill='x',pady=(0,16))
     label(update_card,'Atualizações • AURA '+VERSION,16,bold=True).pack(anchor='w')
     update_text = tk.StringVar(value='Consultando as Releases públicas do GitHub…')
     last_update_notified = 0
+    available_update=None; update_busy=False;installing_update=False
     label(update_card,variable=update_text,size=10,color=MUTED).pack(anchor='w',pady=8)
     def show_update(result,manual=False):
-        nonlocal last_update_notified
-        update_text.set('Nova versão disponível: '+result['version'] if result['available'] else 'Você está na versão mais recente publicada.')
+        nonlocal last_update_notified,available_update
+        available_update=result if result['available'] else None
+        install_button.set_enabled(available_update is not None)
+        stamp=datetime.now().strftime('%H:%M')
+        update_text.set(('Nova versão disponível: '+result['version'] if result['available'] else 'Você está na versão mais recente publicada.')+' • Verificado às '+stamp)
         if result['available'] and (manual or last_update_notified != result['build']):
             last_update_notified = result['build']
             if messagebox.askyesno('Atualização disponível',
                     'AURA '+result['version']+' está pronta. Atualizar agora?\nA AURA vai baixar, instalar e reabrir automaticamente. O controle do PC ficará indisponível por alguns instantes.',parent=root):
                 install_update(result)
     def install_update(result):
+        nonlocal installing_update
+        if installing_update:return
+        installing_update=True;install_button.set_enabled(False);check_button.set_enabled(False)
         from . import update_installer
         from .native_runtime import DATA
         update_text.set('Baixando e verificando a atualização… Aguarde.')
         def prepare():
-            updates.download(result, DATA / 'updates' / 'payload.exe')
+            def progress(done,total):
+                events.put(('update-progress',lambda value:update_text.set(value),('Baixando atualização • '+str(min(99,int(done*100/total)))+'%' if total else f'Baixando atualização • {done/1048576:.1f} MB'),None,True))
+            updates.download(result, DATA / 'updates' / 'payload.exe',progress=progress)
+            events.put(('update-progress',lambda value:update_text.set(value),'Arquivo verificado • preparando instalação…',None,True))
             helper, job_path = update_installer.prepare(result, None)
             try:
                 api('status')
@@ -351,7 +371,9 @@ def main():
             job_path.write_text(json.dumps(job), encoding='utf-8')
             return helper, job_path
         def ready(value):
+            nonlocal installing_update
             if isinstance(value,dict) and 'error' in value:
+                installing_update=False;install_button.set_enabled(True);check_button.set_enabled(True)
                 update_text.set(value['error'])
                 banner.set(value['error'])
                 start_agent()
@@ -360,6 +382,7 @@ def main():
             try:
                 update_installer.launch([str(helper),'--apply-update',str(job_path)])
             except OSError:
+                installing_update=False;install_button.set_enabled(True);check_button.set_enabled(True)
                 update_text.set('Não foi possível abrir o instalador. Tente novamente.')
                 start_agent()
                 return
@@ -370,15 +393,23 @@ def main():
                 return {'error':str(error) if isinstance(error,ValueError) else 'Não foi possível concluir a atualização. Sua instalação foi preservada; tente novamente.'}
         task('install-update', attempt, ready)
     def check_updates(manual=False):
+        nonlocal update_busy
+        if update_busy or installing_update:return
+        update_busy=True;check_button.set_enabled(False);update_text.set('Consultando a versão publicada no GitHub…')
         def check():
             try:return updates.check(updates.DEFAULT_REPOSITORY)
             except Exception as exc:
                 return {'error':str(exc) if isinstance(exc,ValueError) else 'Sem acesso ao GitHub. Tente novamente mais tarde.'}
         def receive(result):
+            nonlocal update_busy
+            update_busy=False;check_button.set_enabled(True)
             if 'error' in result:update_text.set(result['error'])
             else:show_update(result,manual)
         task('updates',check,receive,quiet=True)
-    Button(update_card,'Verificar atualizações',lambda:check_updates(True),kind='refresh').pack(fill='x')
+    check_button=Button(update_card,'Verificar agora',lambda:check_updates(True),kind='refresh');check_button.pack(fill='x',pady=(6,10))
+    install_button=Button(update_card,'Instalar atualização disponível',lambda:install_update(available_update) if available_update else None,kind='refresh',accent=True)
+    install_button.pack(fill='x');install_button.set_enabled(False)
+    label(update_card,'Apenas versões publicadas e estáveis são oferecidas. O download é conferido antes de instalar.',10,MUTED).pack(anchor='w',pady=(16,0))
     def periodic_updates():
         check_updates()
         root.after(15*60*1000,periodic_updates)
@@ -438,10 +469,25 @@ def main():
     def terminate():
         if selected is None:return
         row=selected
-        if messagebox.askyesno('Encerrar processo',f"Encerrar {row['name']} (PID {row['pid']})? Alterações não salvas podem ser perdidas.",parent=root):
-            action('processes/terminate',{k:row[k] for k in ('pid','name','created_at')})
-    end_button=Button(details,'Encerrar processo',terminate,kind='trash',danger=True,width=200)
+        children=process_groups.members(row)
+        pid_summary=', '.join(str(c['pid']) for c in children[:12])+(' …' if len(children)>12 else '')
+        if messagebox.askyesno('Encerrar aplicativo',f"Encerrar {row['name']} e seus {len(children)} processos listados?\nPIDs: "+pid_summary+"\nAlterações não salvas podem ser perdidas.",parent=root):
+            def finish(result):
+                refresh_processes();banner.set(result['message'])
+                if result['failed']:messagebox.showwarning('Encerramento parcial',result['message'],parent=root)
+            task('terminate-group',lambda:process_groups.terminate_snapshot(row,lambda payload:api('processes/terminate',payload)),finish)
+    end_button=Button(details,'Encerrar aplicativo',terminate,kind='trash',danger=True,width=210)
     end_button.pack(side='right',padx=(10,0)); end_button.set_enabled(False)
+    def group_details():
+        if not selected:return
+        dialog=tk.Toplevel(root);dialog.title('Detalhes • '+selected['name']);dialog.geometry('640x480');dialog.configure(bg=BG)
+        label(dialog,selected['name'],18,bold=True).pack(anchor='w',padx=20,pady=20)
+        view=tk.Frame(dialog,bg=BG);view.pack(fill='both',expand=True,padx=20,pady=(0,12))
+        scrollbar=ttk.Scrollbar(view);scrollbar.pack(side='right',fill='y')
+        copy=tk.Text(view,bg=PANEL,fg=TEXT,relief='flat',padx=14,pady=14,wrap='word',yscrollcommand=scrollbar.set,font=('Consolas',10));copy.pack(fill='both',expand=True);scrollbar.configure(command=copy.yview)
+        copy.insert('1.0','\n'.join(f"PID {r['pid']}  •  {r['ram_mb']:g} MB  •  {r['name']}" for r in process_groups.members(selected)));copy.configure(state='disabled')
+        Button(dialog,'Fechar detalhes',dialog.destroy).pack(fill='x',padx=20,pady=(0,20))
+    Button(details,'Detalhes',group_details,width=115).pack(side='right',padx=(8,0))
     process_bar=tk.Frame(procs,bg=BG); process_bar.pack(fill='x',pady=(8,0))
     count=tk.StringVar(value='Atualize para carregar os aplicativos.')
     label(process_bar,variable=count,size=10,color=MUTED).pack(side='left')
@@ -449,7 +495,7 @@ def main():
     name_font=tkfont.Font(root=root,family='Segoe UI',size=11)
     def draw_header(_=None):
         header.delete('all'); w=table.winfo_width()
-        for x,text in ((20,'Aplicativo'),(w*.60,'PID'),(w*.78,'Memória')):header.create_text(x,19,text=text,anchor='w',fill=MUTED,font=('Segoe UI',10))
+        for x,text in ((20,'Aplicativo'),(w*.60,'Processos'),(w*.78,'Memória total')):header.create_text(x,19,text=text,anchor='w',fill=MUTED,font=('Segoe UI',10))
     header.bind('<Configure>',draw_header)
     def fallback(canvas,x,y,name,size=32):
         rounded(canvas,x,y,x+size,y+size,8,fill='#263746',outline=LINE)
@@ -457,7 +503,7 @@ def main():
     def update_detail():
         detail_icon.delete('all')
         if selected:
-            detail_name.set(selected['name']); detail_meta.set(f"PID {selected['pid']}   •   {selected['ram_mb']:g} MB")
+            detail_name.set(selected['name']); detail_meta.set(f"{len(process_groups.members(selected))} processos   •   {selected['ram_mb']:g} MB no total")
             image=images.get(selected.get('icon_id'))
             if image:detail_icon.create_image(22,22,image=image)
             else:fallback(detail_icon,6,6,selected['name'])
@@ -466,7 +512,7 @@ def main():
     def draw_rows(_=None):
         table.delete('all'); w=table.winfo_width(); draw_header()
         for i,row in enumerate(visible):
-            y=i*64; active=selected and row['pid']==selected['pid'] and row['created_at']==selected['created_at']
+            y=i*64; active=selected and process_groups.key(row)==process_groups.key(selected)
             if active:
                 table.create_rectangle(0,y,w,y+64,fill=SELECT,outline=''); table.create_line(2,y+4,2,y+60,fill=TEAL,width=3)
             table.create_line(0,y+64,w,y+64,fill='#23313D')
@@ -479,18 +525,18 @@ def main():
             executable=row['name']
             while name_font.measure(executable)>max_width and len(executable)>1:executable=executable[:-2]+'…'
             table.create_text(76,y+44,text=executable,anchor='w',fill=MUTED,font=('Segoe UI',9))
-            table.create_text(w*.60,y+32,text=str(row['pid']),anchor='w',fill=MUTED,font=('Segoe UI',10))
+            table.create_text(w*.60,y+32,text=str(len(process_groups.members(row))),anchor='w',fill=MUTED,font=('Segoe UI',10))
             table.create_text(w*.78,y+32,text=f"{row['ram_mb']:g} MB",anchor='w',fill=MUTED,font=('Segoe UI',10))
         if not visible:table.create_text(w/2,65,text='Nenhum resultado para esta busca.' if rows else 'Nenhum aplicativo carregado. Use Atualizar.',fill=MUTED,font=('Segoe UI',11))
         table.configure(scrollregion=(0,0,w,max(120,len(visible)*64))); update_detail()
     table.bind('<Configure>',draw_rows)
     def filter_rows(*_):
         nonlocal visible,selected
-        term=search.get().strip().casefold(); visible=[r for r in rows if term in r['name'].casefold() or term in str(r['pid'])]
-        if selected and not any(r['pid']==selected['pid'] and r['created_at']==selected['created_at'] for r in visible):selected=None
+        term=search.get().strip().casefold(); visible=[r for r in rows if process_groups.contains(r,term)]
+        if selected and not any(process_groups.key(r)==process_groups.key(selected) for r in visible):selected=None
         entry_label.place_forget()
         if not search.get() and entry.focus_get()!=entry:entry_label.place(x=40,y=4)
-        count.set(f'{len(visible)} de {len(rows)} processos elegíveis • maior memória primeiro')
+        count.set(f'{len(visible)} aplicativos • {sum(len(process_groups.members(r)) for r in visible)} processos • maior memória primeiro')
         table.yview_moveto(0); draw_rows()
     search.trace_add('write',filter_rows)
     entry.bind('<FocusIn>',lambda _:entry_label.place_forget())
@@ -525,10 +571,12 @@ def main():
         redraw_scheduled=False
         draw_rows()
     def display_processes(data):
-        nonlocal rows,generation,selected
-        generation+=1; current=generation; previous=selected; rows=data
-        selected=next((r for r in rows if previous and r['pid']==previous['pid'] and r['created_at']==previous['created_at']),None)
-        filter_rows(); banner.set('Lista atualizada. Selecione pelo nome e PID.' if rows else 'Nenhum processo elegível para encerramento.')
+        nonlocal rows,generation,selected,process_list_limited
+        process_list_limited=agent_build<407 and len(data)==150
+        generation+=1; current=generation; previous=selected; rows=process_groups.group(data)
+        selected=next((r for r in rows if previous and process_groups.key(r)==process_groups.key(previous)),None)
+        filter_rows(); banner.set('Aplicativos agrupados. Confira os detalhes antes de encerrar.' if rows else 'Nenhum processo elegível para encerramento.')
+        if process_list_limited:banner.set('O agente anterior limita a lista a 150 processos. Atualize o componente administrador em Configurações para obter a lista completa.')
         for icon_id in dict.fromkeys(r.get('icon_id') for r in rows):
             if not icon_id or icon_id in images:continue
             def load(key=icon_id):
