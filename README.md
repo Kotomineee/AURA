@@ -1,4 +1,4 @@
-# AURA 0.1.2 — Aplicativos Windows e Android
+# AURA 0.1.2 
 
 O **AURA** é um projeto pessoal de assistente virtual desenvolvido para facilitar o controle do computador por meio de comandos de voz, permitindo executar tarefas do dia a dia de forma simples e prática.
 
