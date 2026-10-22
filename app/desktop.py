@@ -168,7 +168,7 @@ def main():
         schedule_text.set('Nenhum desligamento agendado.' if not data['shutdown_at'] else
             'Desligamento em '+datetime.fromtimestamp(data['shutdown_at']).strftime('%d/%m às %H:%M:%S'))
         banner.set('Conectado • '+('Simulação' if data['dry_run'] else 'Modo real'))
-        if data.get('version') != VERSION or data.get('build') != BUILD:
+        if data.get('build') != BUILD and data.get('api_protocol') != 1:
             banner.set('Agente de uma versão anterior em execução. Reinicie o Windows para carregar a versão '+VERSION+'.')
         elif '--update-ready' in sys.argv:
             from .update_installer import mark_ready
@@ -178,6 +178,14 @@ def main():
         def start():
             try:return api('status')
             except (OSError,RuntimeError):pass
+            from . import admin
+            if admin.configured():
+                admin.start()
+                for _ in range(30):
+                    time.sleep(.5)
+                    try:return api('status')
+                    except (OSError,RuntimeError):continue
+                raise RuntimeError('O agente administrador não iniciou. Reconfigure em Conexão.')
             if getattr(sys,'frozen',False):args=[sys.executable,'--agent']
             else:
                 executable=Path(sys.executable).with_name('pythonw.exe')
@@ -227,6 +235,86 @@ def main():
         command=configure_startup,bg=PANEL,fg=TEXT,selectcolor=BG,activebackground=PANEL,activeforeground=TEXT).pack(anchor='w',pady=10)
     label(startup_card,variable=startup_state,size=10,color=MUTED).pack(anchor='w')
     Button(startup_card,'Aplicar inicialização',configure_startup).pack(fill='x',pady=(8,0))
+    from . import admin
+    admin_card=card(pages['connection']); admin_card.pack(fill='x',pady=(0,14))
+    label(admin_card,'Administrador automático',17,bold=True).pack(anchor='w')
+    admin_text=tk.StringVar(value='Configurado para iniciar após entrar no Windows.' if admin.configured() else 'Autorize uma vez para iniciar o agente com administrador nos próximos logins.')
+    label(admin_card,variable=admin_text,size=10,color=MUTED).pack(anchor='w',pady=10)
+    def setup_admin():
+        def configure():
+            admin.install()
+            try:
+                old=api('update/prepare',{'confirm':True})
+                for _ in range(40):
+                    try:
+                        process=psutil.Process(old['pid'])
+                        if abs(process.create_time()-old['created_at'])>.01:break
+                    except psutil.NoSuchProcess:break
+                    time.sleep(.25)
+            except (OSError,RuntimeError):pass
+            admin.start()
+            for _ in range(30):
+                time.sleep(.5)
+                try:
+                    result=api('status')
+                    if result.get('administrator'):return result
+                except (OSError,RuntimeError):pass
+            raise RuntimeError('Configurado. Reinicie o Windows para iniciar o agente administrador.')
+        def complete(result):
+            show_status(result); admin_text.set('Agente administrador ativo. Inicialização automática configurada.')
+        task('admin-setup',configure,complete)
+    Button(admin_card,'Configurar administrador automático',setup_admin,kind='settings').pack(fill='x')
+    from .voice import Listener, matches_process
+    listener=None
+    voice_card=card(pages['home']); voice_card.pack(fill='x',pady=(14,0))
+    label(voice_card,'Controle por voz • Ok Aura',16,bold=True).pack(anchor='w')
+    voice_text=tk.StringVar(value='Ative a escuta e diga “Ok Aura”. O áudio é reconhecido neste computador.')
+    voice_label=label(voice_card,variable=voice_text,size=10,color=MUTED); voice_label.configure(wraplength=670); voice_label.pack(fill='x',pady=8)
+    label(voice_card,'Exemplos: “desligar em trinta minutos”, “encerrar Discord”, “cancelar agendamento”.',10,MUTED).pack(anchor='w')
+    def receive_voice(event):
+        nonlocal listener
+        kind,value=event
+        if kind in ('state','error'):
+            voice_text.set(value)
+            if kind=='error':listener=None
+        elif kind=='awake':
+            voice_text.set('Estou ouvindo. Diga o comando em até 10 segundos.')
+            if os.name=='nt':
+                import winsound
+                winsound.MessageBeep()
+            root.after(10000,lambda:voice_text.set('Diga “Ok Aura” e depois o comando.') if listener else None)
+        elif kind=='command':
+            voice_text.set('Diga “Ok Aura” para outro comando.')
+            if not value:voice_text.set('Comando não reconhecido. Diga “Ok Aura” e tente novamente.');return
+            command,argument=value
+            if command=='status':refresh()
+            elif command=='cancel':action('shutdown/cancel',{})
+            elif command in ('shutdown','restart'):power(command)
+            elif command=='schedule':
+                if messagebox.askyesno('Agendar por voz',f'Confirmar desligamento em {argument//60} minutos?',parent=root):action('shutdown',{'confirm':True,'delay_seconds':argument})
+            elif command=='wake':voice_text.set('Ligar o PC por voz está disponível no Android.')
+            elif command=='terminate':
+                def choose(data):
+                    nonlocal selected
+                    matches=[r for r in data if matches_process(r,argument)]
+                    if len(matches)==1:
+                        selected=matches[0]; terminate()
+                    elif matches:
+                        display_processes(data); navigate('processes'); search.set(argument)
+                        voice_text.set('Há vários processos com esse nome. Selecione o PID na aba Processos.')
+                    else:voice_text.set('Nenhum programa elegível com esse nome. Confira a aba Processos.')
+                task('voice-processes',lambda:api('processes'),choose)
+    def toggle_voice():
+        nonlocal listener
+        if listener:
+            listener.close(); listener=None; voice_text.set('Escuta desativada.'); voice_button.text='Ativar escuta “Ok Aura”'; voice_button.draw()
+            preferences.save(voice_enabled=False)
+        else:
+            voice_text.set('Preparando reconhecimento local…')
+            listener=Listener(lambda event:events.put(('voice-event',receive_voice,event,None,True)))
+            listener.start(); voice_button.text='Desativar escuta'; voice_button.draw()
+            preferences.save(voice_enabled=True)
+    voice_button=Button(voice_card,'Ativar escuta “Ok Aura”',toggle_voice); voice_button.pack(fill='x',pady=(8,0))
     update_card = card(pages['home']); update_card.pack(fill='x',pady=(14,0))
     label(update_card,'Atualizações • AURA '+VERSION,16,bold=True).pack(anchor='w')
     update_text = tk.StringVar(value='Consultando as Releases públicas do GitHub…')
@@ -482,6 +570,7 @@ def main():
     Button(pages['history'],'Atualizar histórico',refresh_logs,kind='refresh').pack(fill='x')
     def close():
         nonlocal closed
+        if listener:listener.close()
         closed=True; pool.shutdown(wait=False,cancel_futures=True); icon_pool.shutdown(wait=False,cancel_futures=True); root.destroy()
     root.protocol('WM_DELETE_WINDOW',close); navigate('home'); drain()
     if '--check-ui' in sys.argv:
@@ -490,6 +579,7 @@ def main():
     else:
         root.after(200,configure_startup)
         root.after(400,start_agent)
+        if prefs.get('voice_enabled',False):root.after(1000,toggle_voice)
         root.after(2000,periodic_updates)
         if '--startup' in sys.argv:root.iconify()
     root.mainloop()

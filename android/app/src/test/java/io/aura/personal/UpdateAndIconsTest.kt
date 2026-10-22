@@ -20,14 +20,16 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[33])
 class UpdateAndIconsTest {
-    private val url="https://github.com/Kotomineee/AURA/releases/download/v0.1.2/AURA-Android-0.1.2.apk"
-    private fun release()=JSONObject().put("tag_name","v0.1.2").put("published_at","2026-10-21T00:00:00Z").put("assets",JSONArray().put(JSONObject().put("name","AURA-Android-0.1.2.apk").put("browser_download_url",url)).put(JSONObject().put("name","AURA-Windows-0.1.2.exe").put("browser_download_url","https://github.com/Kotomineee/AURA/releases/download/v0.1.2/AURA-Windows-0.1.2.exe")))
-    private fun manifest()=JSONObject().put("version","0.1.2").put("build",404).put("assets",JSONObject().put("android","AURA-Android-0.1.2.apk").put("windows","AURA-Windows-0.1.2.exe")).put("sha256",JSONObject().put("android","a".repeat(64)).put("windows","b".repeat(64)))
+    private val url="https://github.com/Kotomineee/AURA/releases/download/v0.1.3/AURA-Android-0.1.3.apk"
+    private fun release()=JSONObject().put("tag_name","v0.1.3").put("published_at","2026-10-21T00:00:00Z").put("assets",JSONArray().put(JSONObject().put("name","AURA-Android-0.1.3.apk").put("browser_download_url",url)).put(JSONObject().put("name","AURA-Windows-0.1.3.exe").put("browser_download_url","https://github.com/Kotomineee/AURA/releases/download/v0.1.3/AURA-Windows-0.1.3.exe")))
+    private fun manifest()=JSONObject().put("version","0.1.3").put("build",405).put("assets",JSONObject().put("android","AURA-Android-0.1.3.apk").put("windows","AURA-Windows-0.1.3.exe")).put("sha256",JSONObject().put("android","a".repeat(64)).put("windows","b".repeat(64)))
 
     @Test fun upgradeUsesMonotonicBuildAcrossVersionRename(){
+        assertEquals(405,AuraVersion.build)
+        assertEquals("0.1.3",AuraVersion.name)
         assertTrue(UpdateClient.parse(release(),manifest(),402).available)
         assertTrue(UpdateClient.parse(release(),manifest(),403).available)
-        assertFalse(UpdateClient.parse(release(),manifest(),404).available)
+        assertFalse(UpdateClient.parse(release(),manifest(),405).available)
     }
     @Test fun rejectsExternalDownloadAndIncompleteRelease(){
         val changed=release();changed.getJSONArray("assets").getJSONObject(0).put("browser_download_url","https://evil.example/a.apk")
@@ -36,7 +38,7 @@ class UpdateAndIconsTest {
         assertThrows(IllegalArgumentException::class.java){UpdateClient.parse(release().put("draft",true),manifest())}
         assertThrows(IllegalArgumentException::class.java){UpdateClient.parse(release().put("published_at",JSONObject.NULL),manifest())}
         assertThrows(IllegalArgumentException::class.java){UpdateClient.parse(release(),manifest().put("sha256",JSONObject().put("android","bad")))}
-        assertThrows(IllegalArgumentException::class.java){UpdateClient.parse(release(),manifest().put("version","0.1.3"))}
+        assertThrows(IllegalArgumentException::class.java){UpdateClient.parse(release(),manifest().put("version","0.1.99"))}
         assertThrows(IllegalArgumentException::class.java){UpdateClient.parse(release().put("assets",JSONArray()),manifest())}
     }
     @Test fun processAdapterUsesDecodedBitmapInsteadOfMonogram(){

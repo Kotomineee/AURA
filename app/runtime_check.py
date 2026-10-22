@@ -58,12 +58,26 @@ def run():
             extracted = process_icons._extract(sys.executable)
             assert extracted, 'The packaged executable must expose its actual icon'
             assert Image.open(io.BytesIO(base64.b64decode(extracted))).size == (32,32)
-            assert VERSION == '0.1.2' and BUILD == 404
+            assert VERSION == '0.1.3' and BUILD == 405
+            import sounddevice  # Import only: never open an input device here.
+            from vosk import Model, KaldiRecognizer, SetLogLevel
+            from . import voice, admin
+            SetLogLevel(-1)
+            resources=Path(sys._MEIPASS)
+            model=Model(str(resources/'voice-model'))
+            recognizer=KaldiRecognizer(model,16000)
+            recognizer.AcceptWaveform(bytes(32000))
+            assert json.loads(recognizer.FinalResult()).get('text')==''
+            assert model.vosk_model_find_word('aura')>=0 and model.vosk_model_find_word('ok')>=0
+            import hashlib
+            metadata=json.loads((resources/'admin-agent.json').read_text(encoding='utf-8'))
+            assert hashlib.sha256((resources/'admin-agent.zip').read_bytes()).hexdigest()==metadata['sha256']
             assert updates.DEFAULT_REPOSITORY == 'Kotomineee/AURA'
             report = {'result': 'PASS', 'tls': c.version(), 'certificate_verification': True,
                       'png': True, 'tkinter_import': True, 'psutil_import': True,
                       'actual_executable_icon': True, 'version': VERSION, 'build': BUILD,
-                      'windows_created': 0, 'network_connections': 0}
+                      'voice_model': True, 'voice_wake_vocabulary': True, 'microphone_opened': False,
+                      'protected_agent_payload': True, 'windows_created': 0, 'network_connections': 0}
             destination = os.environ.get('AURA_RUNTIME_CHECK_OUTPUT')
             if destination:
                 Path(destination).write_text(json.dumps(report, indent=2), encoding='utf-8')

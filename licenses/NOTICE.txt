@@ -1,0 +1,8 @@
+AURA uses Vosk speech recognition and the vosk-model-small-pt-0.3 Portuguese model from Alpha Cephei (Apache License 2.0).
+https://alphacephei.com/vosk/
+https://alphacephei.com/vosk/models
+
+Vosk Android uses JNA, available under Apache License 2.0 or LGPL 2.1; this distribution uses Apache License 2.0.
+https://github.com/java-native-access/jna
+
+The remaining dependencies retain their own licenses bundled by the package manager and PyInstaller.

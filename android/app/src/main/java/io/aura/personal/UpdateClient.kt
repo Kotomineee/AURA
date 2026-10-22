@@ -5,8 +5,8 @@ import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
 object AuraVersion {
-    const val name = "0.1.2"
-    const val build = 404
+    const val name = BuildConfig.VERSION_NAME
+    const val build = BuildConfig.VERSION_CODE
 }
 
 /** Uses public TLS trust, never the PC certificate or the pairing token. */

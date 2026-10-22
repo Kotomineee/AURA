@@ -20,11 +20,11 @@ from . import process_icons
 from .version import VERSION, BUILD
 
 settings = identity()
-from dotenv import load_dotenv
-load_dotenv(DATA / 'settings.env', override=True)
+from dotenv import dotenv_values
+os.environ['AURA_NATIVE']='1'
 from . import main as legacy
 legacy.TOKEN = settings['token']
-DRY_RUN = os.getenv('DRY_RUN', 'true').lower() == 'true'
+DRY_RUN = str(dotenv_values(DATA / 'settings.env').get('DRY_RUN','true')).lower() == 'true'
 legacy.DRY_RUN = DRY_RUN
 mutex = threading.RLock()
 stop = threading.Event()
@@ -55,7 +55,8 @@ def power(action, simulation):
         raise HTTPException(400, 'Ação real requer Windows')
     # /t 0 avoids Windows implicitly forcing applications closed for nonzero timeouts.
     try:
-        subprocess.run(['shutdown.exe', '/s' if action == 'shutdown' else '/r', '/t', '0'],
+        from .admin import system_directory
+        subprocess.run([str(system_directory()/'shutdown.exe'), '/s' if action == 'shutdown' else '/r', '/t', '0'],
                        check=True, capture_output=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         raise HTTPException(500, 'O Windows não aceitou a ação')
@@ -122,7 +123,9 @@ def status():
     result = legacy.status('Bearer ' + settings['token'])
     with db() as conn:
         row = conn.execute('SELECT at FROM schedule WHERE id=1').fetchone()
-    result.update(shutdown_at=row[0] if row else None, version=VERSION, build=BUILD)
+    import ctypes
+    result.update(shutdown_at=row[0] if row else None, version=VERSION, build=BUILD, api_protocol=1,
+                  administrator=bool(ctypes.windll.shell32.IsUserAnAdmin()) if os.name=='nt' else False)
     return result
 
 
