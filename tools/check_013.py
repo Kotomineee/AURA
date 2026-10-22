@@ -11,7 +11,7 @@ with tempfile.TemporaryDirectory() as temporary:
     os.environ['AURA_DATA_DIR']=temporary
     from app.voice_commands import parse,matches_process
     from app.admin import installation_script
-    for phrase in ('não desligar pc','desligar em zero minutos','desligar em 999999999 horas','executar cmd','fechar','desligar pc agora talvez'):
+    for phrase in ('não desligar pc','desligar em zero minutos','desligar em 999999999 horas','criar arquivo','fechar','desligar pc agora talvez'):
         assert parse(phrase) is None,phrase
     assert parse('cancelar agendamento')==('cancel',None)
     assert parse('desligar em uma hora')==('schedule',3600)
@@ -24,6 +24,7 @@ with tempfile.TemporaryDirectory() as temporary:
     for required in ('GetFolderPath','Get-FileHash','Set-Acl','SetOwner','ReparsePoint','ReadAndExecute','-LogonType Interactive -RunLevel Highest',"-Argument '--agent'",'Copy-Item'):
         assert required in script,required
     assert script.index('Get-FileHash')<script.index('ExtractToDirectory')<script.index('Register-ScheduledTask')
+    assert "'state.sqlite','actions.log'" in script and script.index('$previous=Get-ScheduledTask')<script.index('Register-ScheduledTask')
     assert len(script.encode('utf-16-le'))*2<30000
     for path in ROOT.rglob('*.py'):
         if '__pycache__' not in path.parts:ast.parse(path.read_text(encoding='utf-8'))

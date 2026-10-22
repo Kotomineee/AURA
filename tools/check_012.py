@@ -14,11 +14,11 @@ with tempfile.TemporaryDirectory() as folder:
     os.environ['DRY_RUN'] = 'true'
     from app import updates, preferences, autostart
     from app.version import VERSION, BUILD
-    assert VERSION == '0.1.6' and BUILD == 408
-    release = {'tag_name':'v0.1.6', 'published_at':'2026-10-21T00:00:00Z', 'assets':[
-        {'name':'AURA-Windows-0.1.6.exe','browser_download_url':'https://github.com/Kotomineee/AURA/releases/download/v0.1.6/AURA-Windows-0.1.6.exe'},
-        {'name':'AURA-Android-0.1.6.apk','browser_download_url':'https://github.com/Kotomineee/AURA/releases/download/v0.1.6/AURA-Android-0.1.6.apk'}]}
-    manifest = {'version':VERSION, 'build':BUILD,'assets':{'windows':'AURA-Windows-0.1.6.exe','android':'AURA-Android-0.1.6.apk'},'sha256':{'windows':'a'*64,'android':'b'*64}}
+    assert VERSION == '0.1.7' and BUILD == 409
+    release = {'tag_name':'v0.1.7', 'published_at':'2026-10-21T00:00:00Z', 'assets':[
+        {'name':'AURA-Windows-0.1.7.exe','browser_download_url':'https://github.com/Kotomineee/AURA/releases/download/v0.1.7/AURA-Windows-0.1.7.exe'},
+        {'name':'AURA-Android-0.1.7.apk','browser_download_url':'https://github.com/Kotomineee/AURA/releases/download/v0.1.7/AURA-Android-0.1.7.apk'}]}
+    manifest = {'version':VERSION, 'build':BUILD,'assets':{'windows':'AURA-Windows-0.1.7.exe','android':'AURA-Android-0.1.7.apk'},'sha256':{'windows':'a'*64,'android':'b'*64}}
     assert updates.parse_release(release, manifest, 'Kotomineee/AURA', current_build=402)['available']
     assert not updates.parse_release(release, manifest, 'Kotomineee/AURA')['available']
     assert updates.parse_release(release, manifest, 'Kotomineee/AURA', current_build=404)['available']
@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory() as folder:
         try:updates.parse_release(bad,manifest,'Kotomineee/AURA')
         except ValueError:pass
         else:raise AssertionError('Invalid release accepted')
-    discovery = dict(release,assets=release['assets']+[{'name':'aura-update.json','browser_download_url':'https://github.com/Kotomineee/AURA/releases/download/v0.1.6/aura-update.json'}])
+    discovery = dict(release,assets=release['assets']+[{'name':'aura-update.json','browser_download_url':'https://github.com/Kotomineee/AURA/releases/download/v0.1.7/aura-update.json'}])
     with patch.object(updates,'get_json',side_effect=[discovery,manifest]):
         assert not updates.check('Kotomineee/AURA')['available']
     preferences.save(autostart=False)

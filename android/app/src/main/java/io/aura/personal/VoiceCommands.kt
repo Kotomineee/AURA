@@ -48,6 +48,7 @@ object VoiceCommands {
             val seconds=count*(if(unit.startsWith("hora"))3600 else if(unit.startsWith("minuto"))60 else 1)
             return if(seconds in 1..604800)VoiceCommand("schedule",seconds=seconds.toInt())else null
         }
+        Regex("(?:abrir|abra|abre|iniciar|inicie|inicia|executar|execute|rodar|rode|open|launch|start) (?:(?:o |a )?(?:app|aplicativo|programa|jogo|plataforma|launcher) |o |a )?(.+)").matchEntire(text)?.let{return VoiceCommand("launch",it.groupValues[1])}
         Regex("(?:encerrar|encerre|encerra|fechar|feche|fecha|finalizar|finalize|finaliza|terminar|termine) (?:(?:o |a )?(?:app|aplicativo|programa|processo) |o |a )?(.+)").matchEntire(text)?.let{
             val pid=Regex("\\b(?:processo|pid) (\\d+)$").find(text)
             return VoiceCommand("terminate",if(pid!=null)"processo "+pid.groupValues[1]else it.groupValues[1])

@@ -20,7 +20,7 @@ if trust_resource.is_file():
     # Keep its trust policy intact when the module is frozen into the executable.
     runtime_data = ['--add-data', str(trust_resource) + ':.']
 PyInstaller.__main__.run([
-    '--noconfirm', '--windowed', '--onefile', '--name', 'AURA-Windows-0.1.6',
+    '--noconfirm', '--windowed', '--onefile', '--name', 'AURA-Windows-0.1.7',
     '--distpath', os.environ.get('AURA_DIST_DIR', str(root / 'dist')),
     '--workpath', os.environ.get('AURA_BUILD_DIR', str(root / 'build')),
     '--specpath', os.environ.get('AURA_SPEC_DIR', str(root)),

@@ -32,7 +32,7 @@ class VoiceTest {
         }finally{controller.pause().stop().destroy()}
     }
     @Test fun rejectsUnboundedAndUnknownCommands(){
-        for(value in listOf("não desligar pc","desligar em zero minutos","desligar em 999999999 horas","executar cmd","fechar"))assertNull(VoiceCommands.parse(value))
+        for(value in listOf("não desligar pc","desligar em zero minutos","desligar em 999999999 horas","criar arquivo","fechar"))assertNull(VoiceCommands.parse(value))
         assertEquals(VoiceCommand("schedule",seconds=3600),VoiceCommands.parse("desligar em uma hora"))
         assertEquals(VoiceCommand("wake"),VoiceCommands.parse("ligar o pc"))
         assertEquals(VoiceCommand("terminate","discord"),VoiceCommands.parse("encerrar o programa Discord"))

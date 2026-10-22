@@ -14,7 +14,9 @@ from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+from .launch_queue import LaunchQueue
+launches=LaunchQueue()
 from .native_runtime import DATA, PORT, identity
 from . import process_icons
 from .version import VERSION, BUILD
@@ -113,7 +115,7 @@ async def security(request: Request, call_next):
         attempts[address].append(now)
         return JSONResponse({'detail': 'Dispositivo não autorizado'}, status_code=401)
     response = await call_next(request)
-    if request.method == 'POST':
+    if request.method == 'POST' and request.url.path!='/api/applications/worker':
         logger.info('action=%s status=%s origin=%s', request.url.path, response.status_code, address)
     return response
 
@@ -125,7 +127,7 @@ def status():
         row = conn.execute('SELECT at FROM schedule WHERE id=1').fetchone()
     import ctypes
     result.update(shutdown_at=row[0] if row else None, version=VERSION, build=BUILD, api_protocol=1,
-                  administrator=bool(ctypes.windll.shell32.IsUserAnAdmin()) if os.name=='nt' else False)
+                  administrator=bool(ctypes.windll.shell32.IsUserAnAdmin()) if os.name=='nt' else False, applications_protocol=1)
     return result
 
 
@@ -251,6 +253,71 @@ server = None
 
 class UpdatePreparation(BaseModel):
     confirm: bool
+
+
+class CatalogRow(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    id: str = Field(pattern=r'^[a-f0-9]{64}$')
+    name: str = Field(min_length=1,max_length=160)
+    source: str = Field(min_length=1,max_length=80)
+    aliases: list[str] = Field(min_length=1,max_length=16)
+
+
+class LaunchRequest(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    app_id: str = Field(pattern=r'^[a-f0-9]{64}$')
+    request_id: str = Field(min_length=36,max_length=36)
+
+
+class LaunchResult(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    request_id: str = Field(min_length=36,max_length=36)
+    ok: bool
+    message: str = Field(max_length=240)
+
+
+class LaunchWorker(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    worker_id: str = Field(min_length=36,max_length=36)
+    rows: list[CatalogRow] | None = Field(default=None,max_length=5000)
+    results: list[LaunchResult] = Field(default_factory=list,max_length=16)
+
+
+@app.get('/api/applications')
+def applications():
+    try:return JSONResponse({'applications':launches.catalog()},headers={'Cache-Control':'no-store'})
+    except ValueError as exc:raise HTTPException(503,str(exc)) from None
+
+
+@app.post('/api/applications/refresh')
+def refresh_applications():
+    with launches.lock:launches.refresh_requested=True
+    return {'message':'Atualização da lista solicitada ao Windows.'}
+
+
+@app.post('/api/applications/open')
+def open_application(req:LaunchRequest):
+    try:return launches.request(req.request_id,req.app_id)
+    except KeyError:raise HTTPException(404,'Aplicativo indisponível; atualize a lista.') from None
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+
+
+@app.get('/api/applications/requests/{request_id}')
+def application_request(request_id:str):
+    try:return launches.status(request_id)
+    except KeyError:raise HTTPException(404,'Solicitação indisponível ou expirada.') from None
+
+
+@app.post('/api/applications/worker')
+def application_worker(req:LaunchWorker,request:Request):
+    if not request.client or request.client.host not in ('127.0.0.1','::1'):raise HTTPException(403,'Operação exclusiva da interface local do Windows.')
+    if req.rows is not None and any(any(not isinstance(a,str) or len(a)>160 for a in row.aliases) for row in req.rows):raise HTTPException(400,'Nome de voz inválido.')
+    try:
+        with launches.lock:
+            job=launches.worker(req.worker_id,None if req.rows is None else [row.model_dump() for row in req.rows],[r.model_dump() for r in req.results])
+            refresh=launches.refresh_requested;launches.refresh_requested=False
+            return {'job':job,'refresh':refresh,'catalog_required':launches.catalog_at<0}
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
 
 
 @app.post('/api/update/prepare')

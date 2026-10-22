@@ -238,6 +238,7 @@ class MainActivity : Activity() {
                 actionButton(c,"Atualizar estado","refresh",accent=true){refresh()}
                 actionButton(c,"Ligar PC • Wake-on-LAN","power"){wake()}
                 val voice=card(body);voice.addView(text("ASSISTENTE AURA",11f,AuraTheme.teal,true));gap(voice,6);voice.addView(text("Diga “Ok Aura”.",23f,bold=true))
+                actionButton(voice,"Programas instalados no PC","processes"){requestInstalledApps()}
                 body.removeView(voice);body.addView(voice,0)
                 voiceStatusText=text(VoiceInbox.message,13f,AuraTheme.muted);voice.addView(voiceStatusText)
                 voiceStatusText?.setOnClickListener{ensureVoice(true)}
@@ -342,6 +343,7 @@ class MainActivity : Activity() {
             "cancel"->command("shutdown/cancel",JSONObject())
             "shutdown","restart"->confirm(if(value.action=="shutdown")"Desligar o PC? Salve seus arquivos antes." else "Reiniciar o PC? Salve seus arquivos antes."){command("power",JSONObject().put("action",value.action).put("confirm",true))}
             "schedule"->confirm("Confirmar desligamento em ${value.seconds/60} minutos?"){command("shutdown",JSONObject().put("confirm",true).put("delay_seconds",value.seconds))}
+            "launch"->requestInstalledApps(value)
             "terminate"->work{
                 val data=JSONArray(api("processes"))
                 val rows=(0 until data.length()).map{data.getJSONObject(it)}
@@ -354,6 +356,63 @@ class MainActivity : Activity() {
                 }
                 "Consulta por voz concluída."
             }
+        }
+    }
+    private fun requestInstalledApps(voice:VoiceCommand?=null){
+        var target:JSONObject?=null;val stamp=generation;var rows=emptyList<JSONObject>()
+        workThen({
+            val pc=requireProfile();target=pc
+            val state=JSONObject(api("status",target=pc))
+            check(state.optInt("applications_protocol",0)>=1){"Atualize o agente no Windows pelos Ajustes da AURA para abrir programas pelo celular."}
+            val data=JSONObject(api("applications",target=pc)).getJSONArray("applications")
+            rows=(0 until data.length()).map{data.getJSONObject(it)}
+            "${rows.size} aplicativos encontrados no PC."
+        }){
+            if(generation==stamp){
+                val pc=target?:return@workThen
+                if(voice==null)showInstalledApps(rows,pc,stamp)
+                else{
+                    val matches=InstalledApps.match(rows,voice)
+                    if(matches.exact && matches.rows.size==1)openInstalledApp(matches.rows[0],pc,stamp)
+                    else if(matches.rows.isNotEmpty())AlertDialog.Builder(this).setTitle("Qual aplicativo você quer abrir?").setItems(matches.rows.map{it.getString("name")+" • "+it.getString("source")}.toTypedArray()){_,index->if(generation==stamp)openInstalledApp(matches.rows[index],pc,stamp)}.setNegativeButton("Cancelar",null).setNeutralButton("Ver todos"){_,_->if(generation==stamp)showInstalledApps(rows,pc,stamp)}.show()
+                    else{VoiceInbox.message="Não encontrei esse nome. Confira o catálogo ou adicione o programa no Windows.";showInstalledApps(rows,pc,stamp)}
+                }
+            }
+        }
+    }
+    private fun showInstalledApps(rows:List<JSONObject>,target:JSONObject,stamp:Int){
+        val body=vertical();body.setPadding(dp(20),dp(8),dp(20),0)
+        body.addView(text("Não encontrou? Use “Adicionar” ou “Nome de voz” na lista de programas da AURA no Windows.",12f,AuraTheme.muted))
+        val search=input("Buscar aplicativo ou jogo");body.addView(search)
+        val list=ListView(this);body.addView(list,LinearLayout.LayoutParams(-1,dp(320)))
+        var displayed=InstalledApps.search(rows,"")
+        val adapter=ArrayAdapter<String>(this,android.R.layout.simple_list_item_1,displayed.map{it.getString("name")+" • "+it.getString("source")}.toMutableList());list.adapter=adapter
+        search.addTextChangedListener(object:TextWatcher{
+            override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
+            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){displayed=InstalledApps.search(rows,s?.toString()?:"");adapter.clear();adapter.addAll(displayed.map{it.getString("name")+" • "+it.getString("source")})}
+            override fun afterTextChanged(s:Editable?){}
+        })
+        val dialog=AlertDialog.Builder(this).setTitle("Programas instalados no PC").setView(body).setNegativeButton("Fechar",null).setNeutralButton("Atualizar lista"){_,_->
+            if(generation==stamp)work{JSONObject(api("applications/refresh",JSONObject(),target)).getString("message")+" Aguarde alguns segundos e abra a lista novamente."}
+        }.create()
+        list.setOnItemClickListener{_,_,index,_->if(generation==stamp){dialog.dismiss();openInstalledApp(displayed[index],target,stamp)}}
+        dialog.show()
+    }
+    private fun openInstalledApp(row:JSONObject,target:JSONObject,stamp:Int){
+        if(generation!=stamp)return
+        work{
+            check(generation==stamp){"A conexão mudou. Selecione o PC e repita o comando."}
+            val requestId=UUID.randomUUID().toString()
+            var result=JSONObject(api("applications/open",JSONObject().put("app_id",row.getString("id")).put("request_id",requestId),target))
+            val deadline=android.os.SystemClock.elapsedRealtime()+22000
+            while(result.optString("state") in listOf("pending","dispatch") && android.os.SystemClock.elapsedRealtime()<deadline){
+                Thread.sleep(500)
+                if(Thread.currentThread().isInterrupted)throw InterruptedException()
+                result=JSONObject(api("applications/requests/$requestId",target=target))
+            }
+            val message=if(result.optString("state") in listOf("pending","dispatch"))"Sem confirmação do Windows. Confira se o programa abriu antes de repetir." else result.optString("message")
+            safeUi{if(generation==stamp)VoiceInbox.message=message}
+            message
         }
     }
     private fun checkUpdates(manual:Boolean){
@@ -436,11 +495,12 @@ class MainActivity : Activity() {
     private fun updateStatus(s:JSONObject){lastStatus=s;connected=true;cpu.update(s);ram.update(s);summary.text="PC conectado\n"+s.getString("hostname");summary.setTextColor(AuraTheme.teal);connectionDot.setTextColor(Color.rgb(55,218,139))}
     private fun disconnected(){connected=false;lastStatus=null;cpu.update(null);ram.update(null);connectionDot.setTextColor(AuraTheme.muted);summary.setTextColor(AuraTheme.muted);summary.text="PC indisponível\n"+(profile?.optString("name")?:"Conecte o PC")}
     private fun confirm(message:String,action:()->Unit){AlertDialog.Builder(this).setTitle("AURA").setMessage(message).setNegativeButton("Cancelar",null).setPositiveButton("Confirmar"){_,_->action()}.show()}
-    private fun work(action:()->String){
+    private fun work(action:()->String)=workThen(action,{})
+    private fun workThen(action:()->String,after:()->Unit){
         if(busy){status.text="Aguarde a ação em andamento.";return}
         busy=true;status.text="Carregando…";progress.visibility=View.VISIBLE
         executor.execute{
-            try{val message=action();safeUi{busy=false;progress.visibility=View.GONE;status.text=message}}
+            try{val message=action();safeUi{busy=false;progress.visibility=View.GONE;status.text=message;after()}}
             catch(e:Exception){safeUi{busy=false;progress.visibility=View.GONE;status.text="Não foi possível concluir: "+(e.message?:"falha de conexão");if(e is java.io.IOException || e is CertificateException)disconnected()}}
         }
     }

@@ -29,7 +29,7 @@ gate.finish(101);assert not gate.accepts_command(102) and not gate.arm(p,p,101.5
 assert gate.arm(p,p,102) and gate.expire(112)
 assert not gate.accepts_command(112) and not gate.arm(p,p,112.5)
 
-def listener_case(candidate,verification,expected,partial=False,expired=False,verification_endpoint=False):
+def listener_case(candidate,verification,expected,partial=False,expired=False,verification_endpoint=False,command_text='status',english_text='',action='status'):
     events=[];recognizers=[];clock=[100.]
     listener=Listener(lambda event:events.append(event))
     # A synthetic clock advances on PCM, independent of machine speed.
@@ -42,7 +42,7 @@ def listener_case(candidate,verification,expected,partial=False,expired=False,ve
             if self.index==0:return not partial
             if self.index==1:return verification_endpoint
             return self.index>=2
-        def Result(self):return json.dumps(candidate if self.index==0 else verification if self.index==1 else {'text':'status'})
+        def Result(self):return json.dumps(candidate if self.index==0 else verification if self.index==1 else {'text':command_text if self.index==2 else english_text})
         def PartialResult(self):raise AssertionError('A partial result must never activate commands')
         def FinalResult(self):return json.dumps(verification if self.index==1 and not verification_endpoint else {'text':''})
     class Stream:
@@ -62,7 +62,9 @@ def listener_case(candidate,verification,expected,partial=False,expired=False,ve
     assert not [e for e in events if e[0]=='error'],events
     commands=[e for e in events if e[0]=='command'];awake=[e for e in events if e[0]=='awake']
     assert bool(commands)==expected,(events,expected)
-    if expected:assert len(commands)==1 and commands[0][1]==('status',None)
+    if expected:
+        assert len(commands)==1 and commands[0][1][0]==action
+        if action=='launch':assert commands[0][1][1]['spoken']=='steam' and commands[0][1][1]['english'].strip()=='open steam'
     else:assert recognizers[2].count==0 and recognizers[3].count==0
     return awake
 
@@ -72,6 +74,9 @@ assert not listener_case(p,phrase(confidence=.5),False)
 assert not listener_case(p,p,False,partial=True)
 assert listener_case(p,p,True)
 assert listener_case(p,p,True,verification_endpoint=True)
+assert listener_case(p,p,True,command_text='abrir steam',english_text='open steam',action='launch')
+assert listener_case(p,p,True,command_text='ruido',english_text='open steam',action='launch')
+assert not listener_case(p,p,False,partial=True,command_text='abrir steam',english_text='open steam')
 assert listener_case(p,p,False,expired=True)
 
 class Item:

@@ -123,7 +123,9 @@ class VoiceService:Service() {
                     val text=JSONObject(command.result).optString("text")
                     if(VoiceCommands.normalize(text) in listOf("","ok","aura","ok aura"))continue
                     var parsed=VoiceCommands.parse(text)
-                    if(parsed?.action=="terminate")parsed=parsed.copy(english=(englishParts+JSONObject(english.finalResult).optString("text")).joinToString(" "))
+                    val other=(englishParts+JSONObject(english.finalResult).optString("text")).joinToString(" ")
+                    if(parsed==null)VoiceCommands.parse(other)?.takeIf{it.action=="launch"}?.let{parsed=it}
+                    if(parsed?.action in listOf("terminate","launch"))parsed=parsed?.copy(english=other)
                     if(policy.acceptsCommand(SystemClock.elapsedRealtime()))VoiceInbox.offer(parsed)
                     policy.finish(SystemClock.elapsedRealtime());resetAudio()
                     state("Comando recebido • confira na AURA.")

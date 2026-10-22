@@ -12,7 +12,7 @@ assert parse('desliga o windows daqui a vinte e cinco minutos')==('schedule',150
 assert parse('pode encerrar o app Stove')==('terminate','stove')
 assert selected_reference(parse('encerre esse app')[1])
 assert parse('encerre o processo 123')==('terminate','processo 123')
-for phrase in ('nao desligue windows','talvez reinicie o pc','desligar o pc se necessario','desligue em 999999999 horas','executar powershell'):
+for phrase in ('nao desligue windows','talvez reinicie o pc','desligar o pc se necessario','desligue em 999999999 horas','apagar arquivo'):
     assert parse(phrase) is None,phrase
 rows=[{'name':'STOVEClient.exe','pid':123},{'name':'ZetaLauncher.exe','pid':124},{'name':'Browser.exe','pid':125}]
 assert candidates(rows,{'spoken':'estou','english':'close stove'})==[rows[0]]

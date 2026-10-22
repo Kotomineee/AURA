@@ -84,10 +84,13 @@ class Listener:
                     if recognizer.AcceptWaveform(data):
                         text=json.loads(recognizer.Result()).get('text','')
                         if normalize(text) in ('','ok','aura','ok aura'):continue
-                        command=parse(text)
-                        if command and command[0]=='terminate':
-                            other=' '.join(english_parts+[json.loads(english.FinalResult()).get('text','')])
-                            command=('terminate',{'spoken':command[1],'english':other})
+                        other=None;command=parse(text)
+                        if command is None:
+                            other=other if other is not None else ' '.join(english_parts+[json.loads(english.FinalResult()).get('text','')]);fallback=parse(other)
+                            if fallback and fallback[0]=='launch':command=fallback
+                        if command and command[0] in ('terminate','launch'):
+                            other=other if other is not None else ' '.join(english_parts+[json.loads(english.FinalResult()).get('text','')])
+                            command=(command[0],{'spoken':command[1],'english':other})
                         if policy.accepts_command(time.monotonic()):self.callback(('command',command))
                         policy.finish(time.monotonic());reset_audio()
         except Exception:

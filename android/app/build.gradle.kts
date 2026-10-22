@@ -11,8 +11,8 @@ android {
         applicationId = "io.aura.personal"
         minSdk = 26
         targetSdk = 35
-        versionCode = 408
-        versionName = "0.1.6"
+        versionCode = 409
+        versionName = "0.1.7"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }

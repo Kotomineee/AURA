@@ -134,11 +134,33 @@ if ((Get-FileHash -LiteralPath $identityZip -Algorithm SHA256).Hash.ToLowerInvar
 $identityPackage=[IO.Compression.ZipFile]::OpenRead($identityZip)
 try {
     foreach ($entry in $identityPackage.Entries) {
-        if ($entry.FullName -notin @('identity.json','server.crt','server.key','settings.env') -or $entry.Length -gt 65536) { throw 'Arquivo de identidade inválido.' }
+        if ($entry.FullName -notin @('identity.json','server.crt','server.key','settings.env','state.sqlite','actions.log')) { throw 'Arquivo de identidade inválido.' }
+        $limit=if ($entry.FullName -in @('state.sqlite','actions.log')) { 10MB } else { 65536 }
+        if ($entry.Length -gt $limit) { throw 'Estado local excedeu o limite.' }
     }
 } finally { $identityPackage.Dispose() }
 [IO.Compression.ZipFile]::ExtractToDirectory($identityZip,$state)
 Remove-Item -LiteralPath $identityZip
+# The GUI stops and waits for the previous agent before installation, so SQLite
+# is closed. Preserve the authoritative protected state, including cancellation.
+$previous=Get-ScheduledTask -TaskName 'AURA-Agent-__SID__' -ErrorAction SilentlyContinue
+if ($previous) {
+    $previousExe=[IO.Path]::GetFullPath($previous.Actions[0].Execute)
+    if (-not $previousExe.StartsWith($base+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Instalação anterior fora do diretório protegido.' }
+    $previousFolder=Split-Path -Parent $previousExe
+    $previousState=Join-Path $previousFolder 'state'
+    foreach ($path in @($previousFolder,$previousState)) {
+        if ((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Estado anterior redirecionado.' }
+    }
+    foreach ($name in @('state.sqlite','actions.log')) {
+        $oldFile=Join-Path $previousState $name
+        if (Test-Path -LiteralPath $oldFile -PathType Leaf) {
+            $item=Get-Item -LiteralPath $oldFile -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -gt 10MB) { throw 'Estado anterior inválido.' }
+            Copy-Item -LiteralPath $oldFile -Destination (Join-Path $state $name) -Force
+        }
+    }
+}
 $action=New-ScheduledTaskAction -Execute $exe -Argument '--agent' -WorkingDirectory $destination
 $trigger=New-ScheduledTaskTrigger -AtLogOn -User '__SID__'
 $user=New-ScheduledTaskPrincipal -UserId '__SID__' -LogonType Interactive -RunLevel Highest
@@ -159,9 +181,11 @@ def install():
     temporary=tempfile.TemporaryDirectory(prefix='admin-setup-',dir=DATA)
     package=Path(temporary.name)/'identity.zip'
     with zipfile.ZipFile(package,'w',zipfile.ZIP_DEFLATED) as archive:
-        for name in ('identity.json','server.crt','server.key','settings.env'):
+        for name in ('identity.json','server.crt','server.key','settings.env','state.sqlite','actions.log'):
+            if name in ('state.sqlite','actions.log') and not (DATA/name).is_file():continue
             value=(DATA/name).read_bytes()
-            if len(value)>65536:raise OSError('Identidade local inválida.')
+            limit=10*1024*1024 if name in ('state.sqlite','actions.log') else 65536
+            if len(value)>limit:raise OSError('Identidade ou estado local excedeu o limite.')
             archive.writestr(name,value)
     script=installation_script(base/'admin-agent.zip',metadata['sha256'],sid(),package,hashlib.sha256(package.read_bytes()).hexdigest())
     powershell=system_directory()/'WindowsPowerShell/v1.0/powershell.exe'

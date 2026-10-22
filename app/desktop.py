@@ -57,6 +57,7 @@ def main():
     style.map('TCombobox',fieldbackground=[('readonly',PANEL)],foreground=[('readonly',TEXT)])
     style.configure('Vertical.TScrollbar',background=LINE,troughcolor=BG,borderwidth=0,arrowsize=12)
     settings=identity(); context=ssl.create_default_context(cafile=settings['cert'])
+    launch_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='aura-launch')
     pool=ThreadPoolExecutor(max_workers=4,thread_name_prefix='aura-client')
     icon_pool=ThreadPoolExecutor(max_workers=2,thread_name_prefix='aura-icons-client')
     events=queue.Queue(); pending=set(); closed=False; connected=False;quitting=False;tray=None
@@ -181,10 +182,23 @@ def main():
         elif '--update-ready' in sys.argv:
             from .update_installer import mark_ready
             mark_ready(sys.argv[sys.argv.index('--update-ready') + 1])
+        if agent_build<409:
+            banner.set('Atualize o agente nos Ajustes para receber pedidos de abertura do Android.')
+            if '--startup' not in sys.argv and not preferences.read().get('agent_017_prompted'):
+                preferences.save(agent_017_prompted=True)
+                root.after(400,offer_agent_upgrade)
+    def offer_agent_upgrade():
+        if closed or quitting or installing_update or agent_build>=409:return
+        restore()
+        if messagebox.askyesno('Atualizar agente do Windows','A abertura pelo Android precisa do novo agente. Atualizar agora? O Windows pode pedir uma autorização de administrador. Sua conexão será preservada.',parent=root):setup_admin()
     def refresh():task('status',lambda:api('status'),show_status)
     def start_agent():
         def start():
-            try:return api('status')
+            try:
+                running=api('status')
+                if running.get('build',0)>=409 or running.get('administrator'):return running
+                from .tray import stop_agent
+                stop_agent(api,psutil.Process,os.getpid())
             except (OSError,RuntimeError):pass
             from . import admin
             if admin.configured():
@@ -252,16 +266,17 @@ def main():
     label(admin_card,variable=admin_text,size=10,color=MUTED).pack(anchor='w',pady=10)
     def setup_admin():
         def configure():
-            admin.install()
             try:
-                old=api('update/prepare',{'confirm':True})
-                for _ in range(40):
-                    try:
-                        process=psutil.Process(old['pid'])
-                        if abs(process.create_time()-old['created_at'])>.01:break
-                    except psutil.NoSuchProcess:break
-                    time.sleep(.25)
+                previous=api('status')
+                from .native_runtime import DATA
+                (DATA/'settings.env').write_text('DRY_RUN='+str(previous['dry_run']).lower()+'\n',encoding='utf-8')
             except (OSError,RuntimeError):pass
+            from .tray import stop_agent
+            stop_agent(api,psutil.Process,os.getpid())
+            try:admin.install()
+            except Exception:
+                events.put(('admin-recover',lambda _:start_agent(),None,None,True))
+                raise
             admin.start()
             for _ in range(30):
                 time.sleep(.5)
@@ -284,7 +299,7 @@ def main():
     voice_text=tk.StringVar(value='Preparando escuta automática • reconhecimento local.')
     voice_label=label(voice_card,variable=voice_text,size=10,color=MUTED); voice_label.configure(wraplength=670); voice_label.pack(fill='x',pady=8)
     voice_meter=VoiceMeter(voice_card);voice_meter.pack(fill='x',pady=(4,12))
-    label(voice_card,'Exemplos: “desligar em trinta minutos”, “encerrar Discord”, “cancelar agendamento”.',10,MUTED).pack(anchor='w')
+    label(voice_card,'Exemplos: “abrir Steam”, “encerrar Discord”, “desligar em trinta minutos”.',10,MUTED).pack(anchor='w')
     def receive_voice(event):
         nonlocal listener
         if quitting:return
@@ -312,6 +327,7 @@ def main():
             elif command=='schedule':
                 if messagebox.askyesno('Agendar por voz',f'Confirmar desligamento em {argument//60} minutos?',parent=root):action('shutdown',{'confirm':True,'delay_seconds':argument})
             elif command=='wake':voice_text.set('Ligar o PC por voz está disponível no Android.')
+            elif command=='launch':launch_voice(argument)
             elif command=='terminate':
                 def choose(data):
                     nonlocal selected
@@ -333,6 +349,103 @@ def main():
         voice_text.set('Preparando reconhecimento local…')
         listener=Listener(lambda event:events.put(('voice-event',receive_voice,event,None,True)))
         listener.start()
+    from .applications import Catalog,match as match_application
+    from .native_runtime import DATA
+    catalog=Catalog(DATA);bridge_owner=str(uuid.uuid4());bridge_results=[];bridge_catalog_dirty=True;catalog_generation=0
+    apps_card=card(pages['home']);apps_card.pack(fill='x',pady=(0,16))
+    label(apps_card,'PROGRAMAS INSTALADOS',10,MUTED).pack(anchor='w')
+    apps_text=tk.StringVar(value='Preparando catálogo do Windows…')
+    label(apps_card,variable=apps_text,size=11).pack(anchor='w',pady=8)
+    label(apps_card,'Abra por voz, confira nomes ou adicione um programa portátil. O pedido do celular também é atendido com a AURA na bandeja.',10,MUTED).pack(anchor='w')
+    def discover_apps():
+        if closed or quitting:return
+        if 'app-catalog' in pending:root.after(200,discover_apps);return
+        def complete(rows):
+            nonlocal bridge_catalog_dirty,catalog_generation
+            catalog_generation+=1;bridge_catalog_dirty=True
+            apps_text.set(str(len(rows))+' aplicativos encontrados • diga “Ok Aura”, aguarde o sinal e peça para abrir.')
+        task('app-catalog',catalog.refresh,complete,quiet=True)
+    def open_installed(row):
+        def opened(message):voice_text.set(message);banner.set(message)
+        task('open-app',lambda:catalog.launch(row['id']),opened)
+    def launch_voice(argument):
+        matches,exact=match_application(catalog.public(),argument)
+        if exact and len(matches)==1:open_installed(matches[0])
+        else:show_installed(argument,matches)
+    def show_installed(argument=None,suggestions=None):
+        from tkinter import filedialog,simpledialog
+        restore()
+        dialog=tk.Toplevel(root);dialog.title('Programas instalados');dialog.geometry('760x620');dialog.configure(bg=BG)
+        label(dialog,'Abrir um aplicativo',22,bold=True).pack(fill='x',padx=20,pady=(20,8))
+        label(dialog,'Escolha o destino correto. Use “Nome de voz” se a pronúncia precisar de ajuste.',10,MUTED).pack(fill='x',padx=20)
+        query=tk.StringVar();field=tk.Entry(dialog,textvariable=query,bg=PANEL,fg=TEXT,insertbackground=TEAL,relief='flat');field.pack(fill='x',padx=20,pady=14,ipady=10)
+        listing=tk.Listbox(dialog,bg=PANEL,fg=TEXT,selectbackground=SELECT,selectforeground=TEXT,relief='flat',activestyle='none',exportselection=False,font=('Segoe UI',11));listing.pack(fill='both',expand=True,padx=20)
+        displayed=[]
+        def draw(*_):
+            nonlocal displayed
+            from .voice_commands import normalize
+            term=normalize(query.get());rows=catalog.public()
+            displayed=sorted([r for r in rows if not term or any(term in a for a in r['aliases'])],key=lambda r:r['name'].casefold())
+            if suggestions and not term:displayed=suggestions+[r for r in displayed if r['id'] not in {v['id'] for v in suggestions}]
+            listing.delete(0,'end')
+            for row in displayed:listing.insert('end',row['name']+'  •  '+row['source'])
+        query.trace_add('write',draw);draw()
+        def selected_app():
+            chosen=listing.curselection();return displayed[chosen[0]] if chosen else None
+        def launch():
+            row=selected_app()
+            if row:open_installed(row);dialog.destroy()
+        def add():
+            path=filedialog.askopenfilename(parent=dialog,title='Selecionar aplicativo',filetypes=[('Aplicativo ou atalho','*.exe *.lnk')])
+            if not path:return
+            name=simpledialog.askstring('Nome do aplicativo','Como este aplicativo deve aparecer?',initialvalue=Path(path).stem,parent=dialog)
+            if not name:return
+            try:catalog.add(name,path);discover_apps();dialog.destroy()
+            except (OSError,ValueError) as exc:messagebox.showerror('Adicionar aplicativo',str(exc),parent=dialog)
+        def alias():
+            row=selected_app()
+            if not row:return
+            value=simpledialog.askstring('Nome de voz','Como você costuma pronunciar '+row['name']+'?',parent=dialog)
+            if not value:return
+            try:catalog.alias(row['id'],value);discover_apps();dialog.destroy()
+            except (OSError,ValueError) as exc:messagebox.showerror('Nome de voz',str(exc),parent=dialog)
+        actions=tk.Frame(dialog,bg=BG);actions.pack(fill='x',padx=20,pady=16)
+        Button(actions,'Abrir',launch,accent=True,width=110).pack(side='left',padx=(0,8))
+        Button(actions,'Adicionar',add,width=125).pack(side='left',padx=(0,8))
+        Button(actions,'Nome de voz',alias,width=150).pack(side='left',padx=(0,8))
+        Button(actions,'Atualizar',lambda:(discover_apps(),dialog.destroy()),width=125).pack(side='left')
+        listing.bind('<Double-1>',lambda _:launch());field.focus_set()
+        if argument and not suggestions:voice_text.set('Não encontrei esse nome. Confira o catálogo, adicione o aplicativo ou ajuste o nome de voz.')
+    Button(apps_card,'Ver programas instalados',show_installed,kind='processes').pack(fill='x')
+    Button(apps_card,'Atualizar lista do Windows',discover_apps,kind='refresh').pack(fill='x',pady=(8,0))
+    def bridge_poll():
+        if closed or quitting:return
+        if connected and agent_build>=409 and not installing_update:
+            revision=catalog_generation;sent=list(bridge_results)
+            packet={'worker_id':bridge_owner,'results':sent}
+            if bridge_catalog_dirty:packet['rows']=catalog.public()
+            def work_bridge():
+                response=api('applications/worker',packet);job=response.get('job');ack=None
+                if job:
+                    try:
+                        if time.monotonic()>=job['expires_at']:raise ValueError('A solicitação expirou; tente novamente.')
+                        message=catalog.launch(job['app_id'],deadline=job['expires_at']);ack={'request_id':job['request_id'],'ok':True,'message':message[:240]}
+                    except (OSError,ValueError) as exc:ack={'request_id':job['request_id'],'ok':False,'message':str(exc)[:240]}
+                return response,ack
+            def complete_bridge(value):
+                nonlocal bridge_catalog_dirty
+                response,ack=value
+                for result in sent:
+                    if result in bridge_results:bridge_results.remove(result)
+                if 'rows' in packet and revision==catalog_generation:bridge_catalog_dirty=False
+                if response.get('catalog_required'):bridge_catalog_dirty=True
+                if ack:bridge_results.append(ack);banner.set(ack['message'])
+                if response.get('refresh'):discover_apps()
+            task('launch-worker',work_bridge,complete_bridge,quiet=True,executor=launch_pool)
+        root.after(900,bridge_poll)
+    def periodic_catalog():
+        if closed or quitting:return
+        discover_apps();root.after(5*60*1000,periodic_catalog)
     update_card = card(pages['updates']); update_card.pack(fill='x',pady=(0,16))
     label(update_card,'Atualizações • AURA '+VERSION,16,bold=True).pack(anchor='w')
     update_text = tk.StringVar(value='Consultando as Releases públicas do GitHub…')
@@ -629,7 +742,7 @@ def main():
         if closed:return
         if listener:listener.close()
         if tray:tray.close()
-        closed=True; pool.shutdown(wait=False,cancel_futures=True); icon_pool.shutdown(wait=False,cancel_futures=True); root.destroy()
+        closed=True; launch_pool.shutdown(wait=False,cancel_futures=True); pool.shutdown(wait=False,cancel_futures=True); icon_pool.shutdown(wait=False,cancel_futures=True); root.destroy()
     def restore():
         if closed:return
         root.deiconify();root.lift();root.focus_force()
@@ -642,6 +755,8 @@ def main():
     def quit_application():
         nonlocal quitting,listener
         if closed or quitting:return
+        if 'admin-setup' in pending:
+            restore();banner.set('Conclua ou cancele a configuração de administrador antes de encerrar.');return
         if installing_update:
             restore();banner.set('Aguarde a conclusão da atualização para encerrar.');return
         quitting=True
@@ -677,6 +792,8 @@ def main():
         root.after(200,configure_startup)
         root.after(400,start_agent)
         root.after(1000,start_voice)
+        root.after(600,periodic_catalog)
+        root.after(1200,bridge_poll)
         root.after(2000,periodic_updates)
         if '--startup' in sys.argv:root.after(100,hide_to_tray)
     root.mainloop()

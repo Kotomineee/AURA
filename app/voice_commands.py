@@ -32,6 +32,8 @@ def parse(value):
             seconds=count*(3600 if unit.startswith('hora') else 60 if unit.startswith('minuto') else 1)
             return ('schedule',seconds) if 1<=seconds<=604800 else None
         return (action,None)
+    opening=re.fullmatch(r'(?:abrir|abra|abre|iniciar|inicie|inicia|executar|execute|rodar|rode|open|launch|start) (?:(?:o |a )?(?:app|aplicativo|programa|jogo|plataforma|launcher) |o |a )?(.+)',text)
+    if opening:return ('launch',opening[1])
     match=re.fullmatch(r'(?:encerrar|encerre|encerra|fechar|feche|fecha|finalizar|finalize|finaliza|terminar|termine) (?:(?:o |a )?(?:app|aplicativo|programa|processo) |o |a )?(.+)',text)
     if match:
         pid=re.search(r'\b(?:processo|pid) (\d+)$',text)
